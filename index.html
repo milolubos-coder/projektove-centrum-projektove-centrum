@@ -32,13 +32,13 @@
 
     <script type="text/babel" data-type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithRedirect, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const { useState, useEffect, useMemo } = React;
 
         // --- VERZIA APLIKÁCIE ---
-        const APP_VERSION = "Verzia: 12.03.2026, 20:30 (Cloud & Whitelist Auth)";
+        const APP_VERSION = "Verzia: 12.03.2026, 20:50 (Crash Fixes & Mobile Redirect)";
 
         // ==========================================
         // VÁŠ FIREBASE KĽÚČ
@@ -139,7 +139,6 @@
 
           const [newAdminUid, setNewAdminUid] = useState('');
 
-          // 1. Sledovanie stavu prihlásenia
           useEffect(() => {
             const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
               setUser(currentUser);
@@ -148,7 +147,6 @@
             return () => unsubscribe();
           }, []);
 
-          // 2. Načítanie dát z cloudu (iba ak je používateľ prihlásený)
           useEffect(() => {
             if (!user) return;
             
@@ -159,7 +157,6 @@
                 setAppState(docSnap.data());
                 setLoading(false);
               } else {
-                // Ak databáza ešte neexistuje, vytvor ju a urob prvého používateľa adminom
                 const defaultDb = { ...INITIAL_DB_STATE, admins: [user.uid] };
                 setDoc(stateRef, defaultDb);
               }
@@ -171,14 +168,11 @@
             return () => unsubscribe();
           }, [user]);
 
-          // Prihlasovacie a odhlasovacie funkcie
-          const handleLogin = async () => {
-            try {
-              await signInWithPopup(auth, googleProvider);
-            } catch (error) {
+          const handleLogin = () => {
+            signInWithRedirect(auth, googleProvider).catch((error) => {
               console.error("Chyba pri prihlásení:", error);
-              alert("Nepodarilo sa prihlásiť. Skúste to znova.");
-            }
+              alert("Nepodarilo sa spustiť prihlásenie. Skúste to znova.");
+            });
           };
 
           const handleLogout = () => {
@@ -193,7 +187,6 @@
             catch (e) { console.error("Error saving to cloud:", e); }
           };
 
-          // Obrazovka načítavania overenia
           if (authLoading) {
             return (
               <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center">
@@ -203,7 +196,6 @@
             );
           }
 
-          // Prihlasovacia obrazovka (Ak nie je prihlásený)
           if (!user) {
             return (
               <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-4">
@@ -213,10 +205,7 @@
                   <h1 className="text-2xl font-bold text-gray-800 mb-2">Projektové centrum</h1>
                   <p className="text-gray-500 mb-8 text-sm">Pre prístup k harmonogramom a projektom je potrebné sa prihlásiť vaším pracovným účtom.</p>
                   
-                  <button 
-                    onClick={handleLogin}
-                    className="w-full flex items-center justify-center gap-3 bg-white border-2 border-gray-200 hover:border-gray-300 hover:bg-gray-50 text-gray-700 font-semibold py-3 px-4 rounded-lg transition-colors shadow-sm"
-                  >
+                  <button onClick={handleLogin} className="w-full flex items-center justify-center gap-3 bg-white border-2 border-gray-200 hover:border-gray-300 hover:bg-gray-50 text-gray-700 font-semibold py-3 px-4 rounded-lg transition-colors shadow-sm">
                     <Icon name="google" className="text-red-500 fa-brands" size={18} />
                     Prihlásiť sa cez Google
                   </button>
@@ -229,7 +218,6 @@
             );
           }
 
-          // Obrazovka chyby databázy
           if (dbError) {
             return (
               <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6 text-center">
@@ -241,7 +229,6 @@
             );
           }
 
-          // Načítavanie dát po prihlásení
           if (loading || !appState) {
             return (
               <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center">
@@ -251,12 +238,10 @@
             );
           }
 
-          // Aplikácia je načítaná a kontrola prístupu (Whitelist / Pozvánky)
           const isAdmin = appState.admins?.includes(user?.uid);
           const isInvited = appState.globalUsers?.some(u => u.email && u.email.toLowerCase() === user?.email?.toLowerCase());
           const hasAccess = isAdmin || isInvited;
 
-          // Ak nemá prístup (nie je admin ani pridaný v zozname)
           if (!hasAccess) {
             return (
               <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-4 text-center">
@@ -268,7 +253,7 @@
                   <p className="text-sm text-gray-500 mb-6 border-t pt-4">Prístup musí najskôr vytvoriť Administrátor pridaním vášho e-mailu do zoznamu zamestnancov.</p>
                   <div className="bg-gray-50 p-3 rounded text-left mb-6 text-xs text-gray-500">
                     Ak máte byť Administrátor, pošlite tento kód vášmu správcovi:<br/>
-                    <code className="block mt-1 font-mono text-gray-800 bg-gray-200 px-2 py-1 rounded select-all">{user.uid}</code>
+                    <code className="block mt-1 font-mono text-gray-800 bg-gray-200 px-2 py-1 rounded select-all break-all">{user.uid}</code>
                   </div>
                   <button onClick={handleLogout} className="w-full bg-gray-800 hover:bg-gray-900 text-white font-medium py-2 px-4 rounded-lg transition-colors">
                     Odhlásiť sa
@@ -283,7 +268,9 @@
           const projects = appState.projects || [];
           const departments = appState.departments || [];
           const globalUsers = appState.globalUsers || [];
-          const currentProject = projects.find(p => p.id === activeProjectId);
+          
+          // BEZPEČNOSTNÁ POISTKA 1: Ak je projekt vybraný, ale už neexistuje v poli projektov (bol napr. zmazaný z iného PC)
+          const currentProject = projects.find(p => String(p.id) === String(activeProjectId));
 
           const updateCurrentProject = (updater) => {
             updateCloudState({ projects: projects.map(p => p.id === activeProjectId ? { ...updater(p), lastModified: new Date().toLocaleDateString('sk-SK') } : p) });
@@ -300,12 +287,14 @@
             let newProject = { id: newId, name: newProjectName || 'Nový projekt', isTemplate: false, lastModified: new Date().toLocaleDateString('sk-SK'), contacts: [], tasks: [], assets: [] };
             
             if (selectedTemplateId) {
-              const template = projects.find(p => p.id === selectedTemplateId);
-              newProject = JSON.parse(JSON.stringify(template)); 
-              newProject.id = newId;
-              newProject.name = newProjectName || `Nový projekt (z ${template.name})`;
-              newProject.isTemplate = false;
-              newProject.lastModified = new Date().toLocaleDateString('sk-SK');
+              const template = projects.find(p => String(p.id) === String(selectedTemplateId));
+              if(template) {
+                newProject = JSON.parse(JSON.stringify(template)); 
+                newProject.id = newId;
+                newProject.name = newProjectName || `Nový projekt (z ${template.name})`;
+                newProject.isTemplate = false;
+                newProject.lastModified = new Date().toLocaleDateString('sk-SK');
+              }
             }
             updateCloudState({ projects: [...projects, newProject] });
             setActiveProjectId(newId);
@@ -407,7 +396,7 @@
                             <div key={proj.id} className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow relative group cursor-pointer" onClick={() => setActiveProjectId(proj.id)}>
                               <h3 className="font-semibold text-lg text-gray-800 mb-2 truncate">{proj.name}</h3>
                               <div className="text-sm text-gray-500 mb-4">
-                                <p>Úlohy: {proj.tasks.length} | Majetok: {proj.assets.length}</p>
+                                <p>Úlohy: {(proj.tasks||[]).length} | Majetok: {(proj.assets||[]).length}</p>
                                 <p>Naposledy upravené: {proj.lastModified}</p>
                               </div>
                               {isAdmin && (
@@ -436,7 +425,7 @@
                                   )}
                                 </div>
                                 <div className="text-sm text-gray-500 mb-4">
-                                  <p>Preddefinovaných úloh: {tpl.tasks.length}</p>
+                                  <p>Preddefinovaných úloh: {(tpl.tasks||[]).length}</p>
                                   <p>Naposledy upravené: {tpl.lastModified}</p>
                                 </div>
                                 <button onClick={() => createFromTemplate(tpl)} className="w-full flex items-center justify-center gap-2 py-2 bg-purple-50 text-purple-700 rounded-lg text-sm font-medium hover:bg-purple-100 transition-colors">
@@ -452,7 +441,6 @@
 
                   {isAdmin && dashboardTab === 'users' && (
                     <div className="space-y-8">
-                      {/* ADMIN SPRÁVA */}
                       <section className="bg-white p-6 rounded-xl border border-blue-200 shadow-sm">
                         <h2 className="text-xl font-semibold text-gray-800 mb-2 flex items-center gap-2"><Icon name="shield-halved" className="text-blue-600"/> Správa Administrátorov</h2>
                         <p className="text-sm text-gray-600 mb-6">Ak chcete niekomu umožniť editovať šablóny a mazať projekty, požiadajte ho o jeho <b className="text-gray-800">UID kód</b> z dolnej lišty. Prihlasovací e-mail samotný na status Admina nestačí.</p>
@@ -477,7 +465,6 @@
                         </div>
                       </section>
 
-                      {/* ŠTRUKTÚRA */}
                       <section className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm mb-10">
                         <div className="flex justify-between items-center mb-6">
                           <div>
@@ -526,7 +513,6 @@
                   )}
                 </div>
 
-                {/* SPODNÁ LIŠTA - IDENTIFIKÁTOR A ODHLÁSENIE */}
                 <div className="fixed bottom-0 left-0 w-full bg-gray-900 text-white p-2 px-6 text-xs flex justify-between items-center z-40 print:hidden shadow-lg">
                    <div className="flex items-center gap-4">
                      <span className="flex items-center gap-2">
@@ -545,24 +531,45 @@
             );
           }
 
+          // BEZPEČNOSTNÁ POISTKA 2: Ochrana pred zobrazením zmazaného projektu (aby nevznikla biela obrazovka)
+          if (activeProjectId && !currentProject) {
+            return (
+              <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6 text-center">
+                <Icon name="triangle-exclamation" size={48} className="text-yellow-500 mb-4" />
+                <h2 className="text-xl font-bold text-gray-800 mb-2">Projekt sa nenašiel</h2>
+                <p className="text-gray-600 mb-6">Projekt bol pravdepodobne vymazaný iným administrátorom, alebo sa nenačítal správne zo servera.</p>
+                <button onClick={() => setActiveProjectId(null)} className="px-6 py-2 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700">Späť na prehľad</button>
+              </div>
+            );
+          }
+
           // --- EDITOR KONKRÉTNEHO PROJEKTU ---
           const tasks = currentProject.tasks || [];
           const assets = currentProject.assets || [];
           const contacts = currentProject.contacts || [];
 
+          // BEZPEČNOSTNÁ POISTKA 3: Ignorovanie nesprávnych dátumov v Ganttovom diagrame
           const ganttData = useMemo(() => {
-            const validTasks = tasks.filter(t => t.startDate && t.deadline);
+            const validTasks = tasks.filter(t => {
+              if (!t.startDate || !t.deadline) return false;
+              const s = new Date(t.startDate).getTime();
+              const d = new Date(t.deadline).getTime();
+              return !isNaN(s) && !isNaN(d); // Ak zadal používateľ zlý dátum, ignoruj ho namiesto spadnutia
+            });
             if (validTasks.length === 0) return null;
-            const dates = validTasks.flatMap(t => [new Date(t.startDate), new Date(t.deadline)]);
+
+            const dates = validTasks.flatMap(t => [new Date(t.startDate).getTime(), new Date(t.deadline).getTime()]);
             const minDate = new Date(Math.min(...dates));
             const maxDate = new Date(Math.max(...dates));
+            
             minDate.setDate(minDate.getDate() - 5);
-            maxDate.setDate(maxDate.getDate() - -5);
+            maxDate.setDate(maxDate.getDate() + 5);
+            
             const totalTime = maxDate.getTime() - minDate.getTime();
             return { validTasks, minDate, maxDate, totalTime, totalDays: totalTime / (1000 * 3600 * 24) };
           }, [tasks]);
 
-          const totalAssetsCost = useMemo(() => assets.reduce((sum, item) => sum + (Number(item.quantity) * Number(item.unitPrice)), 0), [assets]);
+          const totalAssetsCost = useMemo(() => assets.reduce((sum, item) => sum + (Number(item.quantity || 0) * Number(item.unitPrice || 0)), 0), [assets]);
 
           return (
             <div className="min-h-screen bg-gray-100 flex flex-col font-sans pb-12">
@@ -602,7 +609,7 @@
                   <div className="bg-white rounded-xl shadow border border-gray-200 flex-1 flex flex-col overflow-hidden print:hidden">
                     <div className="p-4 border-b flex justify-between items-center bg-gray-50/50">
                       <h2 className="text-lg font-semibold text-gray-800">Zošit: Harmonogram úloh</h2>
-                      <button onClick={() => updateCurrentProject(p => ({...p, tasks: [...p.tasks, { id: Date.now().toString(), wbs: '', name: '', startDate: '', deadline: '', assignedTo: '', status: '1', notes: '', link: '' }] }))} className="flex items-center gap-1 px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-md text-sm font-medium transition-colors"><Icon name="plus" size={16} /> Pridať riadok</button>
+                      <button onClick={() => updateCurrentProject(p => ({...p, tasks: [...(p.tasks||[]), { id: Date.now().toString(), wbs: '', name: '', startDate: '', deadline: '', assignedTo: '', status: '1', notes: '', link: '' }] }))} className="flex items-center gap-1 px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-md text-sm font-medium transition-colors"><Icon name="plus" size={16} /> Pridať riadok</button>
                     </div>
                     <div className="overflow-auto flex-1">
                       <table className="w-full text-left border-collapse min-w-max">
@@ -630,7 +637,7 @@
                             <tr key={task.id} className={`hover:bg-blue-50/30 transition-colors group ${draggedTaskIndex === index ? 'opacity-50 bg-blue-100' : ''}`} draggable onDragStart={() => setDraggedTaskIndex(index)} onDragOver={(e) => e.preventDefault()} onDrop={() => {
                               if (draggedTaskIndex === null || draggedTaskIndex === index) return;
                               updateCurrentProject(p => {
-                                const newTasks = [...p.tasks];
+                                const newTasks = [...(p.tasks||[])];
                                 const [draggedItem] = newTasks.splice(draggedTaskIndex, 1);
                                 newTasks.splice(index, 0, draggedItem);
                                 return { ...p, tasks: newTasks };
@@ -638,14 +645,14 @@
                               setDraggedTaskIndex(null);
                             }}>
                               <td className={`p-2 border-r border-r-gray-100 text-center cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 ${tdBorder}`}><Icon name="grip-vertical" size={16} /></td>
-                              <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}><InputCell value={task.wbs} onChange={(v) => updateCurrentProject(p => ({...p, tasks: p.tasks.map(t => t.id === task.id ? {...t, wbs: v} : t)}))} placeholder="1.1" /></td>
-                              <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}><div style={{ paddingLeft: depth > 1 ? `${(depth - 1) * 1.5}rem` : '0' }}><InputCell value={task.name} onChange={(v) => updateCurrentProject(p => ({...p, tasks: p.tasks.map(t => t.id === task.id ? {...t, name: v} : t)}))} placeholder="Názov..." /></div></td>
-                              <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}><InputCell value={task.startDate} onChange={(v) => updateCurrentProject(p => ({...p, tasks: p.tasks.map(t => t.id === task.id ? {...t, startDate: v} : t)}))} type="date" /></td>
-                              <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}><InputCell value={task.deadline} onChange={(v) => updateCurrentProject(p => ({...p, tasks: p.tasks.map(t => t.id === task.id ? {...t, deadline: v} : t)}))} type="date" /></td>
-                              <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}><UserSelect value={task.assignedTo} onChange={(v) => updateCurrentProject(p => ({...p, tasks: p.tasks.map(t => t.id === task.id ? {...t, assignedTo: v} : t)}))} users={globalUsers} departments={departments} /></td>
-                              <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}><StatusSelect value={task.status} onChange={(v) => updateCurrentProject(p => ({...p, tasks: p.tasks.map(t => t.id === task.id ? {...t, status: v} : t)}))} /></td>
-                              <td className={`p-2 border-r border-r-gray-100 flex items-center gap-1 ${tdBorder}`}><InputCell value={task.notes} onChange={(v) => updateCurrentProject(p => ({...p, tasks: p.tasks.map(t => t.id === task.id ? {...t, notes: v} : t)}))} placeholder="Poznámka..." /></td>
-                              <td className={`p-2 text-center ${tdBorder}`}><button onClick={() => updateCurrentProject(p => ({...p, tasks: p.tasks.filter(t => t.id !== task.id)}))} className="text-red-400 hover:text-red-600 transition-colors p-1"><Icon name="trash-can" size={16} /></button></td>
+                              <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}><InputCell value={task.wbs} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, wbs: v} : t)}))} placeholder="1.1" /></td>
+                              <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}><div style={{ paddingLeft: depth > 1 ? `${(depth - 1) * 1.5}rem` : '0' }}><InputCell value={task.name} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, name: v} : t)}))} placeholder="Názov..." /></div></td>
+                              <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}><InputCell value={task.startDate} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, startDate: v} : t)}))} type="date" /></td>
+                              <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}><InputCell value={task.deadline} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, deadline: v} : t)}))} type="date" /></td>
+                              <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}><UserSelect value={task.assignedTo} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, assignedTo: v} : t)}))} users={globalUsers} departments={departments} /></td>
+                              <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}><StatusSelect value={task.status} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, status: v} : t)}))} /></td>
+                              <td className={`p-2 border-r border-r-gray-100 flex items-center gap-1 ${tdBorder}`}><InputCell value={task.notes} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, notes: v} : t)}))} placeholder="Poznámka..." /></td>
+                              <td className={`p-2 text-center ${tdBorder}`}><button onClick={() => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).filter(t => t.id !== task.id)}))} className="text-red-400 hover:text-red-600 transition-colors p-1"><Icon name="trash-can" size={16} /></button></td>
                             </tr>
                           )})}
                         </tbody>
@@ -661,7 +668,7 @@
                     {!ganttData ? (
                       <div className="flex-1 flex items-center justify-center text-gray-500 flex-col gap-2">
                         <Icon name="chart-gantt" size={48} className="text-gray-300" />
-                        <p>Pre zobrazenie diagramu musia mať úlohy vyplnený <b>Začiatok</b> aj <b>Termín</b>.</p>
+                        <p>Pre zobrazenie diagramu musia mať úlohy vyplnený <b>Začiatok</b> aj <b>Termín</b> (platným dátumom).</p>
                       </div>
                     ) : (
                       <div className="flex-1 overflow-auto"><div className="min-w-[800px]">
@@ -702,7 +709,7 @@
                   <div className="bg-white rounded-xl shadow border border-gray-200 flex-1 flex flex-col overflow-hidden print:hidden">
                     <div className="p-4 border-b flex justify-between items-center bg-gray-50/50 print:hidden">
                       <h2 className="text-lg font-semibold text-gray-800">Zošit: Rozpočet a Majetok</h2>
-                      <button onClick={() => updateCurrentProject(p => ({...p, assets: [...p.assets, { id: Date.now().toString(), name: '', quantity: 1, unitPrice: 0, assignedTo: '', status: '1' }] }))} className="flex items-center gap-1 px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-md text-sm font-medium transition-colors"><Icon name="plus" size={16} /> Pridať položku</button>
+                      <button onClick={() => updateCurrentProject(p => ({...p, assets: [...(p.assets||[]), { id: Date.now().toString(), name: '', quantity: 1, unitPrice: 0, assignedTo: '', status: '1' }] }))} className="flex items-center gap-1 px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-md text-sm font-medium transition-colors"><Icon name="plus" size={16} /> Pridať položku</button>
                     </div>
                     <div className="overflow-auto flex-1">
                       <table className="w-full text-left border-collapse min-w-max">
@@ -724,13 +731,13 @@
                             return (
                               <tr key={asset.id} className="hover:bg-blue-50/30 transition-colors group">
                                 <td className="p-2 border-r border-gray-100 text-center text-gray-300"><Icon name="grip-vertical" size={16} /></td>
-                                <td className="p-2 border-r border-gray-100"><InputCell value={asset.name} onChange={(v) => updateCurrentProject(p => ({...p, assets: p.assets.map(a => a.id === asset.id ? {...a, name: v} : a)}))} placeholder="Názov majetku..." /></td>
-                                <td className="p-2 border-r border-gray-100"><input type="number" value={asset.quantity} onChange={(e) => updateCurrentProject(p => ({...p, assets: p.assets.map(a => a.id === asset.id ? {...a, quantity: e.target.value} : a)}))} className="w-full p-1 bg-transparent rounded outline-none hover:bg-gray-50 focus:bg-white focus:ring-1 focus:ring-blue-500 text-right" min="0" /></td>
-                                <td className="p-2 border-r border-gray-100"><input type="number" value={asset.unitPrice} onChange={(e) => updateCurrentProject(p => ({...p, assets: p.assets.map(a => a.id === asset.id ? {...a, unitPrice: e.target.value} : a)}))} className="w-full p-1 bg-transparent rounded outline-none hover:bg-gray-50 focus:bg-white focus:ring-1 focus:ring-blue-500 text-right" min="0" /></td>
-                                <td className="p-2 border-r border-gray-100 text-right font-medium text-gray-800 bg-gray-50/30">{(Number(asset.quantity) * Number(asset.unitPrice)).toLocaleString('sk-SK')} €</td>
-                                <td className="p-2 border-r border-gray-100"><UserSelect value={asset.assignedTo} onChange={(v) => updateCurrentProject(p => ({...p, assets: p.assets.map(a => a.id === asset.id ? {...a, assignedTo: v} : a)}))} users={globalUsers} departments={departments} /></td>
-                                <td className="p-2 border-r border-gray-100"><StatusSelect value={asset.status} onChange={(v) => updateCurrentProject(p => ({...p, assets: p.assets.map(a => a.id === asset.id ? {...a, status: v} : a)}))} /></td>
-                                <td className="p-2 text-center"><button onClick={() => updateCurrentProject(p => ({...p, assets: p.assets.filter(a => a.id !== asset.id)}))} className="text-red-400 hover:text-red-600 transition-colors p-1"><Icon name="trash-can" size={16} /></button></td>
+                                <td className="p-2 border-r border-gray-100"><InputCell value={asset.name} onChange={(v) => updateCurrentProject(p => ({...p, assets: (p.assets||[]).map(a => a.id === asset.id ? {...a, name: v} : a)}))} placeholder="Názov majetku..." /></td>
+                                <td className="p-2 border-r border-gray-100"><input type="number" value={asset.quantity} onChange={(e) => updateCurrentProject(p => ({...p, assets: (p.assets||[]).map(a => a.id === asset.id ? {...a, quantity: e.target.value} : a)}))} className="w-full p-1 bg-transparent rounded outline-none hover:bg-gray-50 focus:bg-white focus:ring-1 focus:ring-blue-500 text-right" min="0" /></td>
+                                <td className="p-2 border-r border-gray-100"><input type="number" value={asset.unitPrice} onChange={(e) => updateCurrentProject(p => ({...p, assets: (p.assets||[]).map(a => a.id === asset.id ? {...a, unitPrice: e.target.value} : a)}))} className="w-full p-1 bg-transparent rounded outline-none hover:bg-gray-50 focus:bg-white focus:ring-1 focus:ring-blue-500 text-right" min="0" /></td>
+                                <td className="p-2 border-r border-gray-100 text-right font-medium text-gray-800 bg-gray-50/30">{rowTotal.toLocaleString('sk-SK')} €</td>
+                                <td className="p-2 border-r border-gray-100"><UserSelect value={asset.assignedTo} onChange={(v) => updateCurrentProject(p => ({...p, assets: (p.assets||[]).map(a => a.id === asset.id ? {...a, assignedTo: v} : a)}))} users={globalUsers} departments={departments} /></td>
+                                <td className="p-2 border-r border-gray-100"><StatusSelect value={asset.status} onChange={(v) => updateCurrentProject(p => ({...p, assets: (p.assets||[]).map(a => a.id === asset.id ? {...a, status: v} : a)}))} /></td>
+                                <td className="p-2 text-center"><button onClick={() => updateCurrentProject(p => ({...p, assets: (p.assets||[]).filter(a => a.id !== asset.id)}))} className="text-red-400 hover:text-red-600 transition-colors p-1"><Icon name="trash-can" size={16} /></button></td>
                               </tr>
                             );
                           })}
@@ -770,11 +777,11 @@
                           {contacts.map((contact, index) => (
                             <tr key={contact.id} className="hover:bg-blue-50/30 transition-colors group">
                               <td className="p-2 border-r border-gray-100 text-center text-gray-300"><Icon name="grip-vertical" size={16} /></td>
-                              <td className="p-2 border-r border-gray-100"><InputCell value={contact.name} onChange={(v) => updateCurrentProject(p => ({...p, contacts: p.contacts.map(c => c.id === contact.id ? {...c, name: v} : c)}))} placeholder="Napr. Ján Novák" /></td>
-                              <td className="p-2 border-r border-gray-100"><InputCell value={contact.position} onChange={(v) => updateCurrentProject(p => ({...p, contacts: p.contacts.map(c => c.id === contact.id ? {...c, position: v} : c)}))} placeholder="Napr. Manažér pobočky" /></td>
-                              <td className="p-2 border-r border-gray-100"><InputCell value={contact.email} onChange={(v) => updateCurrentProject(p => ({...p, contacts: p.contacts.map(c => c.id === contact.id ? {...c, email: v} : c)}))} type="email" placeholder="jan@firma.sk" /></td>
-                              <td className="p-2 border-r border-gray-100"><InputCell value={contact.phone} onChange={(v) => updateCurrentProject(p => ({...p, contacts: p.contacts.map(c => c.id === contact.id ? {...c, phone: v} : c)}))} type="tel" placeholder="+421..." /></td>
-                              <td className="p-2 text-center"><button onClick={() => updateCurrentProject(p => ({...p, contacts: p.contacts.filter(c => c.id !== contact.id)}))} className="text-red-400 hover:text-red-600 transition-colors p-1"><Icon name="trash-can" size={16} /></button></td>
+                              <td className="p-2 border-r border-gray-100"><InputCell value={contact.name} onChange={(v) => updateCurrentProject(p => ({...p, contacts: (p.contacts||[]).map(c => c.id === contact.id ? {...c, name: v} : c)}))} placeholder="Napr. Ján Novák" /></td>
+                              <td className="p-2 border-r border-gray-100"><InputCell value={contact.position} onChange={(v) => updateCurrentProject(p => ({...p, contacts: (p.contacts||[]).map(c => c.id === contact.id ? {...c, position: v} : c)}))} placeholder="Napr. Manažér pobočky" /></td>
+                              <td className="p-2 border-r border-gray-100"><InputCell value={contact.email} onChange={(v) => updateCurrentProject(p => ({...p, contacts: (p.contacts||[]).map(c => c.id === contact.id ? {...c, email: v} : c)}))} type="email" placeholder="jan@firma.sk" /></td>
+                              <td className="p-2 border-r border-gray-100"><InputCell value={contact.phone} onChange={(v) => updateCurrentProject(p => ({...p, contacts: (p.contacts||[]).map(c => c.id === contact.id ? {...c, phone: v} : c)}))} type="tel" placeholder="+421..." /></td>
+                              <td className="p-2 text-center"><button onClick={() => updateCurrentProject(p => ({...p, contacts: (p.contacts||[]).filter(c => c.id !== contact.id)}))} className="text-red-400 hover:text-red-600 transition-colors p-1"><Icon name="trash-can" size={16} /></button></td>
                             </tr>
                           ))}
                         </tbody>

@@ -37,6 +37,9 @@
 
         const { useState, useEffect, useMemo } = React;
 
+        // --- VERZIA APLIKÁCIE ---
+        const APP_VERSION = "Verzia: 12.03.2026, 20:30 (Cloud & Whitelist Auth)";
+
         // ==========================================
         // VÁŠ FIREBASE KĽÚČ
         // ==========================================
@@ -204,7 +207,8 @@
           if (!user) {
             return (
               <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-4">
-                <div className="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full text-center border border-gray-200">
+                <div className="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full text-center border border-gray-200 relative overflow-hidden">
+                  <div className="absolute top-0 left-0 w-full h-2 bg-blue-600"></div>
                   <img src={LOGO_URL} alt="Logo" className="h-16 object-contain mx-auto mb-6" />
                   <h1 className="text-2xl font-bold text-gray-800 mb-2">Projektové centrum</h1>
                   <p className="text-gray-500 mb-8 text-sm">Pre prístup k harmonogramom a projektom je potrebné sa prihlásiť vaším pracovným účtom.</p>
@@ -218,7 +222,7 @@
                   </button>
                   
                   <div className="mt-8 flex items-center justify-center gap-2 text-xs text-gray-400">
-                    <Icon name="lock" size={12} /> Zabezpečené prostredie
+                    <Icon name="lock" size={12} /> Zabezpečené prostredie G4S
                   </div>
                 </div>
               </div>
@@ -256,7 +260,8 @@
           if (!hasAccess) {
             return (
               <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-4 text-center">
-                <div className="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full border border-gray-200">
+                <div className="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full border border-gray-200 relative overflow-hidden">
+                  <div className="absolute top-0 left-0 w-full h-2 bg-red-500"></div>
                   <Icon name="lock" size={48} className="text-red-500 mb-4" />
                   <h1 className="text-2xl font-bold text-gray-800 mb-2">Prístup zamietnutý</h1>
                   <p className="text-gray-600 mb-6">Účet <b>{user.email}</b> nemá povolený prístup do tejto aplikácie.</p>
@@ -450,7 +455,7 @@
                       {/* ADMIN SPRÁVA */}
                       <section className="bg-white p-6 rounded-xl border border-blue-200 shadow-sm">
                         <h2 className="text-xl font-semibold text-gray-800 mb-2 flex items-center gap-2"><Icon name="shield-halved" className="text-blue-600"/> Správa Administrátorov</h2>
-                        <p className="text-sm text-gray-600 mb-6">Ak chcete niekomu umožniť editovať šablóny a mazať projekty, požiadajte ho o jeho <b className="text-gray-800">UID kód</b> z dolnej lišty. (Teraz vidíte priamo Google účty).</p>
+                        <p className="text-sm text-gray-600 mb-6">Ak chcete niekomu umožniť editovať šablóny a mazať projekty, požiadajte ho o jeho <b className="text-gray-800">UID kód</b> z dolnej lišty. Prihlasovací e-mail samotný na status Admina nestačí.</p>
                         <div className="flex gap-2 mb-6">
                           <input value={newAdminUid} onChange={e => setNewAdminUid(e.target.value)} placeholder="Vložte sem UID kód (napr. aB3xY...)" className="border border-gray-300 p-2 rounded-md w-80 focus:ring-1 focus:ring-blue-500 outline-none" />
                           <button onClick={() => { if(newAdminUid.trim().length > 5) { updateCloudState({ admins: [...new Set([...appState.admins, newAdminUid.trim()])] }); setNewAdminUid(''); } }} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors">
@@ -490,7 +495,7 @@
                               <div className="bg-gray-100 p-3 flex items-center gap-3 border-b border-gray-200">
                                 <input value={dept.prefix} onChange={e => updateCloudState({ departments: departments.map(d => d.id === dept.id ? { ...d, prefix: e.target.value } : d) })} className="w-16 p-1.5 rounded border border-gray-300 font-bold outline-none focus:border-blue-500" placeholder="1." />
                                 <input value={dept.name} onChange={e => updateCloudState({ departments: departments.map(d => d.id === dept.id ? { ...d, name: e.target.value } : d) })} className="flex-1 p-1.5 rounded border border-gray-300 font-bold outline-none focus:border-blue-500" placeholder="Názov oddelenia" />
-                                <button onClick={() => { if (confirm('Zmazať oddelenie aj ľudí v ňom?')) updateCloudState({ departments: departments.filter(d => d.id !== dept.id), globalUsers: globalUsers.filter(u => u.deptId !== dept.id) }); }} className="text-gray-400 hover:text-red-500 p-2 bg-white rounded shadow-sm"><Icon name="trash-can" size={16} /></button>
+                                <button onClick={() => { if (confirm('Zmazať oddelenie aj ľudí v ňom? Všetci v oddelení stratia prístup.')) updateCloudState({ departments: departments.filter(d => d.id !== dept.id), globalUsers: globalUsers.filter(u => u.deptId !== dept.id) }); }} className="text-gray-400 hover:text-red-500 p-2 bg-white rounded shadow-sm"><Icon name="trash-can" size={16} /></button>
                               </div>
                               <div className="p-0 bg-white">
                                 <table className="w-full text-left">
@@ -504,7 +509,7 @@
                                           <Icon name="bell" size={14} className="text-gray-400"/>
                                           <input type="number" value={u.notifyDays} onChange={e => updateCloudState({ globalUsers: globalUsers.map(usr => usr.id === u.id ? { ...usr, notifyDays: e.target.value } : usr) })} className="w-14 p-1.5 border border-transparent hover:border-gray-300 focus:bg-white focus:border-blue-500 outline-none rounded text-center" min="0" /> dní
                                         </td>
-                                        <td className="p-2 text-center pr-4"><button onClick={() => updateCloudState({ globalUsers: globalUsers.filter(usr => usr.id !== u.id) })} className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 p-1"><Icon name="trash-can" size={16}/></button></td>
+                                        <td className="p-2 text-center pr-4"><button onClick={() => { if(confirm('Odstrániť používateľa? Stratí tým prístup na stránku.')) updateCloudState({ globalUsers: globalUsers.filter(usr => usr.id !== u.id) })}} className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 p-1"><Icon name="trash-can" size={16}/></button></td>
                                       </tr>
                                     ))}
                                   </tbody>
@@ -531,6 +536,7 @@
                      <span className="border-l border-gray-700 pl-4">Práva: <span className={isAdmin ? 'text-green-400 font-bold' : 'text-blue-300 font-bold'}>{isAdmin ? 'Administrátor (Plný prístup)' : 'Používateľ (Iba úprava projektov)'}</span></span>
                    </div>
                    <div className="flex items-center gap-4">
+                     {isAdmin && <div className="text-gray-400 border-r border-gray-700 pr-4 mr-1">{APP_VERSION}</div>}
                      <div><span className="text-gray-400">UID:</span> <code className="bg-gray-800 px-2 py-1 rounded select-all font-mono tracking-wider ml-1">{user?.uid}</code></div>
                      <button onClick={handleLogout} className="bg-gray-800 hover:bg-red-600 px-3 py-1 rounded transition-colors text-white border border-gray-700 hover:border-red-500">Odhlásiť sa</button>
                    </div>
@@ -721,7 +727,7 @@
                                 <td className="p-2 border-r border-gray-100"><InputCell value={asset.name} onChange={(v) => updateCurrentProject(p => ({...p, assets: p.assets.map(a => a.id === asset.id ? {...a, name: v} : a)}))} placeholder="Názov majetku..." /></td>
                                 <td className="p-2 border-r border-gray-100"><input type="number" value={asset.quantity} onChange={(e) => updateCurrentProject(p => ({...p, assets: p.assets.map(a => a.id === asset.id ? {...a, quantity: e.target.value} : a)}))} className="w-full p-1 bg-transparent rounded outline-none hover:bg-gray-50 focus:bg-white focus:ring-1 focus:ring-blue-500 text-right" min="0" /></td>
                                 <td className="p-2 border-r border-gray-100"><input type="number" value={asset.unitPrice} onChange={(e) => updateCurrentProject(p => ({...p, assets: p.assets.map(a => a.id === asset.id ? {...a, unitPrice: e.target.value} : a)}))} className="w-full p-1 bg-transparent rounded outline-none hover:bg-gray-50 focus:bg-white focus:ring-1 focus:ring-blue-500 text-right" min="0" /></td>
-                                <td className="p-2 border-r border-gray-100 text-right font-medium text-gray-800 bg-gray-50/30">{rowTotal.toLocaleString('sk-SK')} €</td>
+                                <td className="p-2 border-r border-gray-100 text-right font-medium text-gray-800 bg-gray-50/30">{(Number(asset.quantity) * Number(asset.unitPrice)).toLocaleString('sk-SK')} €</td>
                                 <td className="p-2 border-r border-gray-100"><UserSelect value={asset.assignedTo} onChange={(v) => updateCurrentProject(p => ({...p, assets: p.assets.map(a => a.id === asset.id ? {...a, assignedTo: v} : a)}))} users={globalUsers} departments={departments} /></td>
                                 <td className="p-2 border-r border-gray-100"><StatusSelect value={asset.status} onChange={(v) => updateCurrentProject(p => ({...p, assets: p.assets.map(a => a.id === asset.id ? {...a, status: v} : a)}))} /></td>
                                 <td className="p-2 text-center"><button onClick={() => updateCurrentProject(p => ({...p, assets: p.assets.filter(a => a.id !== asset.id)}))} className="text-red-400 hover:text-red-600 transition-colors p-1"><Icon name="trash-can" size={16} /></button></td>
@@ -893,6 +899,7 @@
                    </span>
                  </div>
                  <div className="flex items-center gap-4">
+                   {isAdmin && <div className="text-gray-400 border-r border-gray-700 pr-4 mr-1">{APP_VERSION}</div>}
                    <button onClick={handleLogout} className="bg-gray-800 hover:bg-red-600 px-3 py-1 rounded transition-colors text-white border border-gray-700 hover:border-red-500">Odhlásiť sa</button>
                  </div>
               </div>
@@ -906,6 +913,5 @@
     </script>
 </body>
 </html>
-
 
 

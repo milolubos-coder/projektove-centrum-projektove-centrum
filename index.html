@@ -32,13 +32,13 @@
 
     <script type="text/babel" data-type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithRedirect, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        const { useState, useEffect, useMemo } = React;
+        const { useState, useEffect } = React;
 
         // --- VERZIA APLIKÁCIE ---
-        const APP_VERSION = "Verzia: 12.03.2026, 20:50 (Crash Fixes & Mobile Redirect)";
+        const APP_VERSION = "Verzia: 12.03.2026, 20:55 (Stabilná verzia - Fix pre Safari a Projekty)";
 
         // ==========================================
         // VÁŠ FIREBASE KĽÚČ
@@ -168,11 +168,14 @@
             return () => unsubscribe();
           }, [user]);
 
-          const handleLogin = () => {
-            signInWithRedirect(auth, googleProvider).catch((error) => {
+          // Návrat k stabilnému popup oknu - pre Safari a iOS je to bezpečnejšie, len musí byť pridaná doména vo Firebase!
+          const handleLogin = async () => {
+            try {
+              await signInWithPopup(auth, googleProvider);
+            } catch (error) {
               console.error("Chyba pri prihlásení:", error);
-              alert("Nepodarilo sa spustiť prihlásenie. Skúste to znova.");
-            });
+              alert("Nepodarilo sa prihlásiť. Uistite sa, že ste vo Firebase pridali doménu do zoznamu Authorized Domains!");
+            }
           };
 
           const handleLogout = () => {
@@ -268,8 +271,6 @@
           const projects = appState.projects || [];
           const departments = appState.departments || [];
           const globalUsers = appState.globalUsers || [];
-          
-          // BEZPEČNOSTNÁ POISTKA 1: Ak je projekt vybraný, ale už neexistuje v poli projektov (bol napr. zmazaný z iného PC)
           const currentProject = projects.find(p => String(p.id) === String(activeProjectId));
 
           const updateCurrentProject = (updater) => {
@@ -513,6 +514,7 @@
                   )}
                 </div>
 
+                {/* SPODNÁ LIŠTA - IDENTIFIKÁTOR A ODHLÁSENIE */}
                 <div className="fixed bottom-0 left-0 w-full bg-gray-900 text-white p-2 px-6 text-xs flex justify-between items-center z-40 print:hidden shadow-lg">
                    <div className="flex items-center gap-4">
                      <span className="flex items-center gap-2">
@@ -531,45 +533,43 @@
             );
           }
 
-          // BEZPEČNOSTNÁ POISTKA 2: Ochrana pred zobrazením zmazaného projektu (aby nevznikla biela obrazovka)
+          // BEZPEČNOSTNÁ POISTKA PROTI BIELEJ OBRAZOVKE (Ak bol projekt medzičasom zmazaný)
           if (activeProjectId && !currentProject) {
             return (
               <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6 text-center">
                 <Icon name="triangle-exclamation" size={48} className="text-yellow-500 mb-4" />
                 <h2 className="text-xl font-bold text-gray-800 mb-2">Projekt sa nenašiel</h2>
-                <p className="text-gray-600 mb-6">Projekt bol pravdepodobne vymazaný iným administrátorom, alebo sa nenačítal správne zo servera.</p>
+                <p className="text-gray-600 mb-6">Tento projekt bol pravdepodobne vymazaný iným administrátorom.</p>
                 <button onClick={() => setActiveProjectId(null)} className="px-6 py-2 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700">Späť na prehľad</button>
               </div>
             );
           }
 
-          // --- EDITOR KONKRÉTNEHO PROJEKTU ---
+          // --- VÝPOČTY PRE EDITOR KONKRÉTNEHO PROJEKTU ---
           const tasks = currentProject.tasks || [];
           const assets = currentProject.assets || [];
           const contacts = currentProject.contacts || [];
 
-          // BEZPEČNOSTNÁ POISTKA 3: Ignorovanie nesprávnych dátumov v Ganttovom diagrame
-          const ganttData = useMemo(() => {
-            const validTasks = tasks.filter(t => {
-              if (!t.startDate || !t.deadline) return false;
-              const s = new Date(t.startDate).getTime();
-              const d = new Date(t.deadline).getTime();
-              return !isNaN(s) && !isNaN(d); // Ak zadal používateľ zlý dátum, ignoruj ho namiesto spadnutia
-            });
-            if (validTasks.length === 0) return null;
-
+          // Bezpečná kalkulácia Ganttovho diagramu - ignoruje zlé dátumy, takže aplikácia nikdy nespadne!
+          let ganttData = null;
+          const validTasks = tasks.filter(t => {
+            if (!t.startDate || !t.deadline) return false;
+            const s = new Date(t.startDate).getTime();
+            const d = new Date(t.deadline).getTime();
+            return !isNaN(s) && !isNaN(d);
+          });
+          
+          if (validTasks.length > 0) {
             const dates = validTasks.flatMap(t => [new Date(t.startDate).getTime(), new Date(t.deadline).getTime()]);
             const minDate = new Date(Math.min(...dates));
             const maxDate = new Date(Math.max(...dates));
-            
             minDate.setDate(minDate.getDate() - 5);
             maxDate.setDate(maxDate.getDate() + 5);
-            
             const totalTime = maxDate.getTime() - minDate.getTime();
-            return { validTasks, minDate, maxDate, totalTime, totalDays: totalTime / (1000 * 3600 * 24) };
-          }, [tasks]);
+            ganttData = { validTasks, minDate, maxDate, totalTime, totalDays: totalTime / (1000 * 3600 * 24) };
+          }
 
-          const totalAssetsCost = useMemo(() => assets.reduce((sum, item) => sum + (Number(item.quantity || 0) * Number(item.unitPrice || 0)), 0), [assets]);
+          const totalAssetsCost = assets.reduce((sum, item) => sum + (Number(item.quantity || 0) * Number(item.unitPrice || 0)), 0);
 
           return (
             <div className="min-h-screen bg-gray-100 flex flex-col font-sans pb-12">

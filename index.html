@@ -38,7 +38,7 @@
         const { useState, useEffect, useMemo } = React;
 
         // --- VERZIA APLIKÁCIE ---
-        const APP_VERSION = "Verzia: 12.03.2026, 21:10 (Skrytie Šablón pre Používateľov)";
+        const APP_VERSION = "Verzia: 12.03.2026, 21:15 (Zoskupenie podľa oddelení)";
 
         // ==========================================
         // VÁŠ FIREBASE KĽÚČ
@@ -370,25 +370,36 @@
                           </div>
                         )}
                         
-                        {/* Výber prístupov (Iba Administrátor môže prideľovať práva pri vytváraní) */}
+                        {/* Výber prístupov so zoskupením (Iba Administrátor) */}
                         {isAdmin && (
                           <div className="bg-blue-50/50 p-4 rounded-lg border border-blue-100">
                             <label className="block text-sm font-bold text-gray-800 mb-2 flex items-center gap-2"><Icon name="users-gear"/> Kto bude mať k projektu prístup?</label>
-                            <p className="text-xs text-gray-500 mb-4">Administrátori vidia všetky projekty automaticky. Vyberte bežných používateľov, ktorí tento projekt uvidia na svojej ploche.</p>
-                            <div className="max-h-40 overflow-y-auto bg-white border border-gray-200 rounded p-2 space-y-1">
-                              {globalUsers.map(u => {
-                                const isChecked = newProjectAllowedUsers.includes(u.id);
+                            <p className="text-xs text-gray-500 mb-4">Administrátori vidia všetky projekty automaticky. Vyberte používateľov, ktorí tento projekt uvidia na svojej ploche.</p>
+                            <div className="max-h-60 overflow-y-auto bg-white border border-gray-200 rounded p-2">
+                              {departments.map(dept => {
+                                const deptUsers = globalUsers.filter(u => u.deptId === dept.id);
+                                if (deptUsers.length === 0) return null;
                                 return (
-                                  <label key={u.id} className="flex items-center gap-2 p-1.5 hover:bg-gray-50 rounded cursor-pointer">
-                                    <input type="checkbox" checked={isChecked} onChange={(e) => {
-                                      if (e.target.checked) setNewProjectAllowedUsers([...newProjectAllowedUsers, u.id]);
-                                      else setNewProjectAllowedUsers(newProjectAllowedUsers.filter(id => id !== u.id));
-                                    }} className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"/>
-                                    <span className="text-sm text-gray-700">{u.name} <span className="text-gray-400 text-xs ml-1">({u.email})</span></span>
-                                  </label>
+                                  <div key={dept.id} className="mb-3 last:mb-0 bg-gray-50/50 p-2 rounded border border-gray-100">
+                                    <div className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 px-1 border-b border-gray-200 pb-1">{dept.prefix} {dept.name}</div>
+                                    <div className="space-y-1">
+                                      {deptUsers.map(u => {
+                                        const isChecked = newProjectAllowedUsers.includes(u.id);
+                                        return (
+                                          <label key={u.id} className="flex items-center gap-2 p-1.5 hover:bg-blue-50 rounded cursor-pointer ml-1 transition-colors border-l-2 border-transparent hover:border-blue-300">
+                                            <input type="checkbox" checked={isChecked} onChange={(e) => {
+                                              if (e.target.checked) setNewProjectAllowedUsers([...newProjectAllowedUsers, u.id]);
+                                              else setNewProjectAllowedUsers(newProjectAllowedUsers.filter(id => id !== u.id));
+                                            }} className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"/>
+                                            <span className="text-sm text-gray-800 font-medium">{u.prefix} {u.name} <span className="text-gray-400 text-xs font-normal ml-1">({u.email})</span></span>
+                                          </label>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
                                 );
                               })}
-                              {globalUsers.length === 0 && <div className="text-xs text-gray-500 italic p-2">Zatiaľ nie sú v systéme žiadni zamestnanci.</div>}
+                              {globalUsers.length === 0 && <div className="text-xs text-gray-500 italic p-2 text-center">Zatiaľ nie sú v systéme žiadni zamestnanci.</div>}
                             </div>
                           </div>
                         )}
@@ -402,7 +413,7 @@
                   </div>
                 )}
 
-                {/* MODAL - Úprava práv pre existujúci projekt (Iba pre Admina) */}
+                {/* MODAL - Úprava práv pre existujúci projekt so zoskupením (Iba pre Admina) */}
                 {showAccessModal && (
                   <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
                     <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden flex flex-col">
@@ -412,21 +423,33 @@
                       </div>
                       <div className="p-6">
                         <p className="text-sm text-gray-600 mb-4">Vyberte zamestnancov, ktorí uvidia projekt <b>{projects.find(p => p.id === showAccessModal)?.name}</b> vo svojom centre.</p>
-                        <div className="max-h-60 overflow-y-auto border border-gray-200 rounded p-2 space-y-1">
-                          {globalUsers.map(u => {
-                            const proj = projects.find(p => p.id === showAccessModal);
-                            const allowed = proj?.allowedUsers || [];
-                            const isChecked = allowed.includes(u.id);
+                        <div className="max-h-72 overflow-y-auto border border-gray-200 rounded p-2 bg-white">
+                          {departments.map(dept => {
+                            const deptUsers = globalUsers.filter(u => u.deptId === dept.id);
+                            if (deptUsers.length === 0) return null;
                             return (
-                              <label key={u.id} className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer border-b border-gray-100 last:border-0">
-                                <input type="checkbox" checked={isChecked} onChange={(e) => {
-                                  const newList = e.target.checked ? [...allowed, u.id] : allowed.filter(id => id !== u.id);
-                                  setAppState(prev => ({...prev, projects: prev.projects.map(p => p.id === showAccessModal ? {...p, allowedUsers: newList} : p)}));
-                                }} className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"/>
-                                <span className="text-sm text-gray-800">{u.name} <span className="text-gray-400 text-xs ml-1">({u.email})</span></span>
-                              </label>
+                              <div key={dept.id} className="mb-3 last:mb-0 bg-gray-50/50 p-2 rounded border border-gray-100">
+                                <div className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 px-1 border-b border-gray-200 pb-1">{dept.prefix} {dept.name}</div>
+                                <div className="space-y-1">
+                                  {deptUsers.map(u => {
+                                    const proj = projects.find(p => p.id === showAccessModal);
+                                    const allowed = proj?.allowedUsers || [];
+                                    const isChecked = allowed.includes(u.id);
+                                    return (
+                                      <label key={u.id} className="flex items-center gap-2 p-1.5 hover:bg-blue-50 rounded cursor-pointer ml-1 transition-colors border-l-2 border-transparent hover:border-blue-300">
+                                        <input type="checkbox" checked={isChecked} onChange={(e) => {
+                                          const newList = e.target.checked ? [...allowed, u.id] : allowed.filter(id => id !== u.id);
+                                          setAppState(prev => ({...prev, projects: prev.projects.map(p => p.id === showAccessModal ? {...p, allowedUsers: newList} : p)}));
+                                        }} className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"/>
+                                        <span className="text-sm text-gray-800 font-medium">{u.prefix} {u.name} <span className="text-gray-400 text-xs font-normal ml-1">({u.email})</span></span>
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                              </div>
                             );
                           })}
+                          {globalUsers.length === 0 && <div className="text-xs text-gray-500 italic p-2 text-center">Zatiaľ nie sú v systéme žiadni zamestnanci.</div>}
                         </div>
                       </div>
                       <div className="p-4 border-t bg-gray-50 flex justify-end gap-3">
@@ -527,9 +550,11 @@
                               <div key={tpl.id} className="bg-white p-5 rounded-xl border border-purple-200 shadow-sm hover:shadow-md transition-shadow relative group">
                                 <div className="flex justify-between items-start mb-2">
                                   <h3 className="font-semibold text-lg text-purple-800 cursor-pointer hover:underline truncate" onClick={() => setActiveProjectId(tpl.id)}>{tpl.name}</h3>
-                                  <button onClick={() => deleteProject(tpl.id)} className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity" title="Zmazať šablónu">
-                                    <Icon name="trash-can" size={18} />
-                                  </button>
+                                  {isAdmin && (
+                                    <button onClick={() => deleteProject(tpl.id)} className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity" title="Zmazať šablónu">
+                                      <Icon name="trash-can" size={18} />
+                                    </button>
+                                  )}
                                 </div>
                                 <div className="text-sm text-gray-500 mb-4">
                                   <p>Preddefinovaných úloh: {(tpl.tasks||[]).length}</p>

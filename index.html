@@ -1,0 +1,848 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Projektové centrum</title>
+    
+    <!-- Tailwind CSS pre dizajn -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- FontAwesome pre ikony -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- React a Babel pre spustenie kódu priamo v prehliadači -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        /* Štýly pre PDF Export */
+        @media print {
+            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; background-color: white !important; }
+            .print\:hidden { display: none !important; }
+            .print\:shadow-none { box-shadow: none !important; }
+            .print\:border-none { border: none !important; }
+            .print\:static { position: static !important; }
+            @page { margin: 0; size: A4 portrait; }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useMemo } = React;
+
+        // Pomocná komponenta pre ikony (FontAwesome)
+        const Icon = ({ name, size = 16, className = "" }) => (
+            <i className={`fa-solid fa-${name} ${className}`} style={{ fontSize: size }}></i>
+        );
+
+        const STATUS_OPTIONS = [
+          { value: '1', label: '1. Nevyriešené', color: 'bg-red-100 text-red-800' },
+          { value: '2', label: '2. V riešení', color: 'bg-blue-100 text-blue-800' },
+          { value: '3', label: '3. Vyriešené', color: 'bg-green-100 text-green-800' },
+        ];
+
+        // Logo
+        const LOGO_URL = "image_1e7ca9.png";
+
+        // --- POMOCNÉ KOMPONENTY ---
+        const StatusSelect = ({ value, onChange }) => (
+          <select 
+            value={value} 
+            onChange={e => onChange(e.target.value)}
+            className={`w-full p-1 rounded outline-none border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500 ${STATUS_OPTIONS.find(o => o.value === value)?.color || 'bg-white'}`}
+          >
+            {STATUS_OPTIONS.map(opt => (
+              <option key={opt.value} value={opt.value} className="bg-white text-gray-900">{opt.label}</option>
+            ))}
+          </select>
+        );
+
+        const UserSelect = ({ value, onChange, users, departments }) => (
+          <select 
+            value={value} 
+            onChange={e => onChange(e.target.value)}
+            className="w-full p-1 bg-transparent rounded outline-none hover:bg-gray-50 focus:bg-white focus:ring-1 focus:ring-blue-500"
+          >
+            <option value="">-- Nepriradené --</option>
+            {departments.map(dept => (
+              <optgroup key={dept.id} label={`${dept.prefix} ${dept.name}`}>
+                {users.filter(u => u.deptId === dept.id).map(u => (
+                  <option key={u.id} value={u.id}>{u.prefix} {u.name}</option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+        );
+
+        const InputCell = ({ value, onChange, type = "text", placeholder = "" }) => (
+          <input
+            type={type}
+            value={value}
+            onChange={e => onChange(e.target.value)}
+            placeholder={placeholder}
+            className="w-full p-1 bg-transparent rounded outline-none hover:bg-gray-50 focus:bg-white focus:ring-1 focus:ring-blue-500"
+          />
+        );
+
+        function App() {
+          const [activeTab, setActiveTab] = useState('harmonogram');
+          const [dashboardTab, setDashboardTab] = useState('projects');
+
+          const [draggedTaskIndex, setDraggedTaskIndex] = useState(null);
+          const [draggedAssetIndex, setDraggedAssetIndex] = useState(null);
+          const [draggedContactIndex, setDraggedContactIndex] = useState(null);
+
+          const [departments, setDepartments] = useState([
+            { id: 'd1', prefix: '1.', name: 'ĽZ/nábor' },
+            { id: 'd2', prefix: '2.', name: 'Ostraha' }
+          ]);
+          
+          const [globalUsers, setGlobalUsers] = useState([
+            { id: 'u1', deptId: 'd1', prefix: '1.1.', name: 'Lenka A.', email: 'lenka@firma.sk', notifyDays: 3 },
+            { id: 'u2', deptId: 'd1', prefix: '1.2.', name: 'Pavel K.', email: 'pavel@firma.sk', notifyDays: 1 },
+            { id: 'u3', deptId: 'd2', prefix: '2.1.', name: 'Ján Novák (BOZP)', email: 'jan.novak@firma.sk', notifyDays: 3 },
+          ]);
+
+          const [showNewProjectModal, setShowNewProjectModal] = useState(false);
+          const [newProjectName, setNewProjectName] = useState('');
+          const [selectedTemplateId, setSelectedTemplateId] = useState('');
+
+          const [activeProjectId, setActiveProjectId] = useState(null);
+          const [projects, setProjects] = useState([
+            {
+              id: 'p1',
+              name: 'Projekt: Rekonštrukcia pobočky',
+              isTemplate: false,
+              lastModified: '12. 3. 2026',
+              contacts: [
+                { id: 'c1', name: 'Karol Zima', position: 'Manažér pobočky', email: 'karol.zima@firma.sk', phone: '+421 900 123 456' }
+              ],
+              tasks: [
+                { id: 't1', wbs: '1.', name: 'BOZP', startDate: '2026-03-01', deadline: '2026-03-20', assignedTo: 'u3', status: '1', notes: 'Zabezpečiť úvodné školenie', link: '' },
+                { id: 't2', wbs: '1.1', name: 'Kontaktovanie BOZP osoby', startDate: '2026-03-05', deadline: '2026-03-15', assignedTo: 'u3', status: '3', notes: '', link: 'https://bozp.sk' },
+                { id: 't3', wbs: '1.2', name: 'Prieskum rizík', startDate: '2026-03-16', deadline: '2026-04-01', assignedTo: 'u1', status: '2', notes: 'Čakáme na vyjadrenie', link: '' },
+                { id: 't4', wbs: '2.', name: 'Stavebné úpravy', startDate: '2026-04-05', deadline: '2026-05-15', assignedTo: '', status: '1', notes: '', link: '' },
+              ],
+              assets: [
+                { id: 'a1', name: 'Ochranné prilby', quantity: 15, unitPrice: 450, assignedTo: 'u3', status: '3' },
+                { id: 'a2', name: 'Reflexné vesty', quantity: 20, unitPrice: 150, assignedTo: 'u1', status: '1' },
+              ]
+            },
+            {
+              id: 't1',
+              name: 'Šablóna: Štandardný projekt',
+              isTemplate: true,
+              lastModified: '10. 3. 2026',
+              contacts: [],
+              tasks: [
+                { id: 'tt1', wbs: '1.', name: 'BOZP', startDate: '', deadline: '', assignedTo: '', status: '1', notes: 'Tu doplňte poznámku', link: '' },
+                { id: 'tt2', wbs: '2.', name: 'Stavebné úpravy', startDate: '', deadline: '', assignedTo: '', status: '1', notes: '', link: '' },
+              ],
+              assets: [
+                { id: 'ta1', name: 'Základný stavebný materiál', quantity: 1, unitPrice: 0, assignedTo: '', status: '1' }
+              ]
+            }
+          ]);
+
+          const currentProject = projects.find(p => p.id === activeProjectId);
+          const users = globalUsers; 
+          const contacts = currentProject?.contacts || [];
+          const tasks = currentProject?.tasks || [];
+          const assets = currentProject?.assets || [];
+
+          const updateCurrentProject = (updater) => {
+            setProjects(prev => prev.map(p => {
+              if (p.id === activeProjectId) {
+                return { ...updater(p), lastModified: new Date().toLocaleDateString('sk-SK') };
+              }
+              return p;
+            }));
+          };
+
+          const createNewProject = (isTemplate = false) => {
+            const newId = Date.now().toString();
+            setProjects([...projects, {
+              id: newId,
+              name: isTemplate ? 'Nová šablóna' : 'Nový projekt',
+              isTemplate,
+              lastModified: new Date().toLocaleDateString('sk-SK'),
+              contacts: [], tasks: [], assets: []
+            }]);
+            setActiveProjectId(newId);
+          };
+
+          const handleCreateProjectSubmit = () => {
+            if (selectedTemplateId) {
+              const template = projects.find(p => p.id === selectedTemplateId);
+              const newProject = JSON.parse(JSON.stringify(template)); 
+              newProject.id = Date.now().toString();
+              newProject.name = newProjectName || `Nový projekt (z ${template.name})`;
+              newProject.isTemplate = false;
+              newProject.lastModified = new Date().toLocaleDateString('sk-SK');
+              setProjects([...projects, newProject]);
+              setActiveProjectId(newProject.id);
+            } else {
+              const newId = Date.now().toString();
+              setProjects([...projects, {
+                id: newId,
+                name: newProjectName || 'Nový projekt',
+                isTemplate: false,
+                lastModified: new Date().toLocaleDateString('sk-SK'),
+                contacts: [], tasks: [], assets: []
+              }]);
+              setActiveProjectId(newId);
+            }
+            setShowNewProjectModal(false);
+            setNewProjectName('');
+            setSelectedTemplateId('');
+          };
+
+          const createFromTemplate = (template) => {
+            const newId = Date.now().toString();
+            const newProject = JSON.parse(JSON.stringify(template)); 
+            newProject.id = newId;
+            newProject.name = `Nový projekt (z ${template.name})`;
+            newProject.isTemplate = false;
+            newProject.lastModified = new Date().toLocaleDateString('sk-SK');
+            setProjects([...projects, newProject]);
+            setActiveProjectId(newId);
+          };
+
+          const deleteProject = (id) => {
+            if(confirm('Naozaj chcete túto položku zmazať?')) {
+              setProjects(projects.filter(p => p.id !== id));
+            }
+          };
+
+          const addTask = () => updateCurrentProject(p => ({ ...p, tasks: [...p.tasks, { id: Date.now().toString(), wbs: '', name: '', startDate: '', deadline: '', assignedTo: '', status: '1', notes: '', link: '' }] }));
+          const updateTask = (id, field, value) => updateCurrentProject(p => ({ ...p, tasks: p.tasks.map(t => t.id === id ? { ...t, [field]: value } : t) }));
+          const deleteTask = (id) => updateCurrentProject(p => ({ ...p, tasks: p.tasks.filter(t => t.id !== id) }));
+          const handleTaskDrop = (dropIndex) => {
+            if (draggedTaskIndex === null || draggedTaskIndex === dropIndex) return;
+            updateCurrentProject(p => {
+              const newTasks = [...p.tasks];
+              const [draggedItem] = newTasks.splice(draggedTaskIndex, 1);
+              newTasks.splice(dropIndex, 0, draggedItem);
+              return { ...p, tasks: newTasks };
+            });
+            setDraggedTaskIndex(null);
+          };
+
+          const addAsset = () => updateCurrentProject(p => ({ ...p, assets: [...p.assets, { id: Date.now().toString(), name: '', quantity: 1, unitPrice: 0, assignedTo: '', status: '1' }] }));
+          const updateAsset = (id, field, value) => updateCurrentProject(p => ({ ...p, assets: p.assets.map(a => a.id === id ? { ...a, [field]: value } : a) }));
+          const deleteAsset = (id) => updateCurrentProject(p => ({ ...p, assets: p.assets.filter(a => a.id !== id) }));
+          const handleAssetDrop = (dropIndex) => {
+            if (draggedAssetIndex === null || draggedAssetIndex === dropIndex) return;
+            updateCurrentProject(p => {
+              const newAssets = [...p.assets];
+              const [draggedItem] = newAssets.splice(draggedAssetIndex, 1);
+              newAssets.splice(dropIndex, 0, draggedItem);
+              return { ...p, assets: newAssets };
+            });
+            setDraggedAssetIndex(null);
+          };
+
+          const addContact = () => updateCurrentProject(p => ({ ...p, contacts: [...(p.contacts || []), { id: Date.now().toString(), name: '', position: '', email: '', phone: '' }] }));
+          const updateContact = (id, field, value) => updateCurrentProject(p => ({ ...p, contacts: (p.contacts || []).map(c => c.id === id ? { ...c, [field]: value } : c) }));
+          const deleteContact = (id) => updateCurrentProject(p => ({ ...p, contacts: (p.contacts || []).filter(c => c.id !== id) }));
+          const handleContactDrop = (dropIndex) => {
+            if (draggedContactIndex === null || draggedContactIndex === dropIndex) return;
+            updateCurrentProject(p => {
+              const newContacts = [...(p.contacts || [])];
+              const [draggedItem] = newContacts.splice(draggedContactIndex, 1);
+              newContacts.splice(dropIndex, 0, draggedItem);
+              return { ...p, contacts: newContacts };
+            });
+            setDraggedContactIndex(null);
+          };
+
+          const totalAssetsCost = useMemo(() => {
+            return assets.reduce((sum, item) => sum + (Number(item.quantity) * Number(item.unitPrice)), 0);
+          }, [assets]);
+
+          const addDepartment = () => setDepartments([...departments, { id: Date.now().toString(), prefix: '', name: '' }]);
+          const updateDepartment = (id, field, value) => setDepartments(departments.map(d => d.id === id ? { ...d, [field]: value } : d));
+          const deleteDepartment = (id) => {
+            if (confirm('Zmazať oddelenie aj so všetkými používateľmi v ňom?')) {
+              setDepartments(departments.filter(d => d.id !== id));
+              setGlobalUsers(globalUsers.filter(u => u.deptId !== id));
+            }
+          };
+
+          const addGlobalUser = (deptId) => setGlobalUsers([...globalUsers, { id: Date.now().toString(), deptId, prefix: '', name: '', email: '', notifyDays: 1 }]);
+          const updateGlobalUser = (id, field, value) => setGlobalUsers(globalUsers.map(u => u.id === id ? { ...u, [field]: value } : u));
+          const deleteGlobalUser = (id) => setGlobalUsers(globalUsers.filter(u => u.id !== id));
+
+          const ganttData = useMemo(() => {
+            const validTasks = tasks.filter(t => t.startDate && t.deadline);
+            if (validTasks.length === 0) return null;
+            const dates = validTasks.flatMap(t => [new Date(t.startDate), new Date(t.deadline)]);
+            const minDate = new Date(Math.min(...dates));
+            const maxDate = new Date(Math.max(...dates));
+            minDate.setDate(minDate.getDate() - 5);
+            maxDate.setDate(maxDate.getDate() + 5);
+            const totalTime = maxDate.getTime() - minDate.getTime();
+            const totalDays = totalTime / (1000 * 3600 * 24);
+            return { validTasks, minDate, maxDate, totalTime, totalDays };
+          }, [tasks]);
+
+          if (!activeProjectId) {
+            const myProjects = projects.filter(p => !p.isTemplate);
+            const myTemplates = projects.filter(p => p.isTemplate);
+
+            return (
+              <div className="min-h-screen bg-gray-50 p-8 font-sans relative">
+                {showNewProjectModal && (
+                  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
+                      <div className="p-4 border-b flex justify-between items-center bg-gray-50">
+                        <h3 className="font-bold text-lg text-gray-800">Vytvoriť nový projekt</h3>
+                        <button onClick={() => setShowNewProjectModal(false)} className="text-gray-400 hover:text-gray-600 p-1">
+                          <Icon name="xmark" size={20} />
+                        </button>
+                      </div>
+                      <div className="p-6 space-y-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Názov projektu</label>
+                          <input 
+                            type="text" 
+                            value={newProjectName}
+                            onChange={(e) => setNewProjectName(e.target.value)}
+                            placeholder="Napr. Inštalácia kamier - Pobočka Bratislava"
+                            className="w-full p-2 border border-gray-300 rounded focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                            autoFocus
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Použiť šablónu</label>
+                          <select 
+                            value={selectedTemplateId}
+                            onChange={(e) => setSelectedTemplateId(e.target.value)}
+                            className="w-full p-2 border border-gray-300 rounded focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none bg-white"
+                          >
+                            <option value="">-- Prázdny projekt --</option>
+                            {myTemplates.map(tpl => <option key={tpl.id} value={tpl.id}>{tpl.name}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                      <div className="p-4 border-t bg-gray-50 flex justify-end gap-3">
+                        <button onClick={() => setShowNewProjectModal(false)} className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-200 rounded-md transition-colors">Zrušiť</button>
+                        <button onClick={handleCreateProjectSubmit} className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 transition-colors shadow-sm">Vytvoriť projekt</button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="max-w-6xl mx-auto">
+                  <header className="mb-6 flex justify-between items-end pb-4">
+                    <div className="flex flex-col gap-4">
+                      <img src={LOGO_URL} alt="Logo spoločnosti" className="h-10 object-contain self-start rounded" />
+                      <div>
+                        <h1 className="text-3xl font-bold text-gray-800">Projektové centrum</h1>
+                        <p className="text-gray-500 mt-1">Správa projektov, šablón a používateľov</p>
+                      </div>
+                    </div>
+                    <div className="flex gap-3">
+                      <button onClick={() => createNewProject(true)} className="flex items-center gap-2 px-4 py-2 bg-purple-50 text-purple-700 border border-purple-200 rounded-md shadow-sm text-sm font-medium hover:bg-purple-100 transition-colors">
+                        <Icon name="file-lines" size={16} /> Nová šablóna
+                      </button>
+                      <button onClick={() => setShowNewProjectModal(true)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 rounded-md shadow-sm text-sm font-medium text-white hover:bg-blue-700 transition-colors">
+                        <Icon name="plus" size={16} /> Nový projekt
+                      </button>
+                    </div>
+                  </header>
+
+                  <div className="flex space-x-6 mb-8 border-b border-gray-200">
+                    <button 
+                      onClick={() => setDashboardTab('projects')} 
+                      className={`pb-3 text-lg font-medium transition-colors ${dashboardTab === 'projects' ? 'border-b-2 border-blue-600 text-blue-700' : 'text-gray-500 hover:text-gray-800'}`}
+                    >
+                      Projekty a Šablóny
+                    </button>
+                    <button 
+                      onClick={() => setDashboardTab('users')} 
+                      className={`pb-3 text-lg font-medium transition-colors ${dashboardTab === 'users' ? 'border-b-2 border-blue-600 text-blue-700' : 'text-gray-500 hover:text-gray-800'}`}
+                    >
+                      Centrálni používatelia
+                    </button>
+                  </div>
+
+                  {dashboardTab === 'projects' && (
+                    <>
+                      <section className="mb-10">
+                        <h2 className="text-xl font-semibold text-gray-700 mb-4 flex items-center gap-2"><Icon name="folder" size={20}/> Aktívne projekty</h2>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                          {myProjects.map(proj => (
+                            <div key={proj.id} className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow relative group cursor-pointer" onClick={() => setActiveProjectId(proj.id)}>
+                              <h3 className="font-semibold text-lg text-gray-800 mb-2 truncate">{proj.name}</h3>
+                              <div className="text-sm text-gray-500 mb-4">
+                                <p>Úlohy: {proj.tasks.length} | Majetok: {proj.assets.length}</p>
+                                <p>Naposledy upravené: {proj.lastModified}</p>
+                              </div>
+                              <button onClick={(e) => { e.stopPropagation(); deleteProject(proj.id); }} className="absolute top-4 right-4 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity" title="Zmazať projekt">
+                                <Icon name="trash-can" size={18} />
+                              </button>
+                            </div>
+                          ))}
+                          {myProjects.length === 0 && <p className="text-gray-500 col-span-full">Zatiaľ nemáte žiadne projekty.</p>}
+                        </div>
+                      </section>
+
+                      <section>
+                        <h2 className="text-xl font-semibold text-gray-700 mb-4 flex items-center gap-2"><Icon name="file-lines" size={20}/> Moje šablóny</h2>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                          {myTemplates.map(tpl => (
+                            <div key={tpl.id} className="bg-white p-5 rounded-xl border border-purple-200 shadow-sm hover:shadow-md transition-shadow relative group">
+                              <div className="flex justify-between items-start mb-2">
+                                <h3 className="font-semibold text-lg text-purple-800 cursor-pointer hover:underline truncate" onClick={() => setActiveProjectId(tpl.id)}>{tpl.name}</h3>
+                                <button onClick={() => deleteProject(tpl.id)} className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity" title="Zmazať šablónu">
+                                  <Icon name="trash-can" size={18} />
+                                </button>
+                              </div>
+                              <div className="text-sm text-gray-500 mb-4">
+                                <p>Preddefinovaných úloh: {tpl.tasks.length}</p>
+                                <p>Naposledy upravené: {tpl.lastModified}</p>
+                              </div>
+                              <button onClick={() => createFromTemplate(tpl)} className="w-full flex items-center justify-center gap-2 py-2 bg-purple-50 text-purple-700 rounded-lg text-sm font-medium hover:bg-purple-100 transition-colors">
+                                <Icon name="copy" size={16} /> Vytvoriť projekt zo šablóny
+                              </button>
+                            </div>
+                          ))}
+                          {myTemplates.length === 0 && <p className="text-gray-500 col-span-full">Zatiaľ nemáte vytvorené žiadne šablóny.</p>}
+                        </div>
+                      </section>
+                    </>
+                  )}
+
+                  {dashboardTab === 'users' && (
+                    <section className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                      <div className="flex justify-between items-center mb-6">
+                        <div>
+                          <h2 className="text-xl font-semibold text-gray-800 flex items-center gap-2"><Icon name="users" size={20}/> Centrálny adresár používateľov</h2>
+                          <p className="text-sm text-gray-500 mt-1">Spravujte oddelenia a používateľov, ktorých potom môžete priraďovať v akomkoľvek projekte.</p>
+                        </div>
+                        <button onClick={addDepartment} className="flex items-center gap-1 px-4 py-2 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-md text-sm font-medium transition-colors">
+                          <Icon name="plus" size={16} /> Pridať oddelenie
+                        </button>
+                      </div>
+                      
+                      <div className="space-y-6">
+                        {departments.map(dept => (
+                          <div key={dept.id} className="border border-gray-200 rounded-lg overflow-hidden">
+                            <div className="bg-gray-100 p-3 flex items-center gap-3 border-b border-gray-200">
+                              <input value={dept.prefix} onChange={e => updateDepartment(dept.id, 'prefix', e.target.value)} className="w-16 p-1.5 rounded border border-gray-300 font-bold outline-none focus:border-blue-500" placeholder="1." />
+                              <input value={dept.name} onChange={e => updateDepartment(dept.id, 'name', e.target.value)} className="flex-1 p-1.5 rounded border border-gray-300 font-bold outline-none focus:border-blue-500" placeholder="Názov oddelenia" />
+                              <button onClick={() => deleteDepartment(dept.id)} className="text-gray-400 hover:text-red-500 p-2 bg-white rounded shadow-sm">
+                                <Icon name="trash-can" size={16} />
+                              </button>
+                            </div>
+                            <div className="p-0 bg-white">
+                              <table className="w-full text-left">
+                                <tbody className="divide-y divide-gray-100">
+                                  {globalUsers.filter(u => u.deptId === dept.id).map(user => (
+                                    <tr key={user.id} className="hover:bg-gray-50 transition-colors group">
+                                      <td className="p-2 w-24 pl-4 border-r border-gray-50"><input value={user.prefix} onChange={e => updateGlobalUser(user.id, 'prefix', e.target.value)} className="w-full p-1.5 border border-transparent hover:border-gray-300 focus:bg-white focus:border-blue-500 outline-none rounded" placeholder="1.1." /></td>
+                                      <td className="p-2 w-1/3 border-r border-gray-50"><input value={user.name} onChange={e => updateGlobalUser(user.id, 'name', e.target.value)} className="w-full p-1.5 border border-transparent hover:border-gray-300 focus:bg-white focus:border-blue-500 outline-none rounded" placeholder="Meno a priezvisko" /></td>
+                                      <td className="p-2 w-1/3 border-r border-gray-50"><input value={user.email} onChange={e => updateGlobalUser(user.id, 'email', e.target.value)} type="email" className="w-full p-1.5 border border-transparent hover:border-gray-300 focus:bg-white focus:border-blue-500 outline-none rounded" placeholder="E-mail" /></td>
+                                      <td className="p-2 w-44 flex items-center gap-2 text-sm text-gray-600">
+                                        <Icon name="bell" size={14} className="text-gray-400"/>
+                                        <input type="number" value={user.notifyDays} onChange={e => updateGlobalUser(user.id, 'notifyDays', e.target.value)} className="w-14 p-1.5 border border-transparent hover:border-gray-300 focus:bg-white focus:border-blue-500 outline-none rounded text-center" min="0" /> dní vopred
+                                      </td>
+                                      <td className="p-2 text-center pr-4">
+                                        <button onClick={() => deleteGlobalUser(user.id)} className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 p-1">
+                                          <Icon name="trash-can" size={16}/>
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                              <div className="p-3 bg-gray-50/50 border-t border-gray-100">
+                                 <button onClick={() => addGlobalUser(dept.id)} className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1 font-medium px-2 py-1 rounded hover:bg-blue-50 transition-colors">
+                                   <Icon name="plus" size={14}/> Pridať používateľa
+                                 </button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  )}
+                </div>
+              </div>
+            );
+          }
+
+          return (
+            <div className="min-h-screen bg-gray-100 flex flex-col font-sans">
+              <header className="bg-white shadow-sm border-b px-6 py-4 flex justify-between items-center print:shadow-none print:border-b-2 print:border-gray-800">
+                <div className="flex items-center gap-4">
+                  <button onClick={() => setActiveProjectId(null)} className="p-2 hover:bg-gray-100 rounded-full text-gray-600 transition-colors print:hidden" title="Späť na prehľad">
+                    <Icon name="arrow-left" size={20} />
+                  </button>
+                  <img src={LOGO_URL} alt="Logo" className="h-8 object-contain hidden print:block mr-4" />
+                  <div>
+                    <div className="flex items-center gap-2 group">
+                      <input 
+                        value={currentProject.name} 
+                        onChange={(e) => updateCurrentProject(p => ({ ...p, name: e.target.value }))}
+                        className="text-2xl font-bold text-gray-800 tracking-tight bg-transparent border-b-2 border-transparent hover:border-gray-300 focus:border-blue-500 outline-none rounded-none px-1 -ml-1 w-[28rem] max-w-full transition-colors"
+                      />
+                      <Icon name="pen" size={16} className="text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity print:hidden" />
+                    </div>
+                    <div className="flex items-center gap-2 mt-1 px-1 print:hidden">
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${currentProject.isTemplate ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                        {currentProject.isTemplate ? 'Šablóna' : 'Projekt'}
+                      </span>
+                      <p className="text-sm text-gray-500">Naposledy upravené: {currentProject.lastModified}</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex gap-3 print:hidden">
+                  <button onClick={() => window.print()} className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+                    <Icon name="print" size={16} /> PDF
+                  </button>
+                  <button className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+                    <Icon name="share-nodes" size={16} /> Zdieľať
+                  </button>
+                  <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 rounded-md shadow-sm text-sm font-medium text-white hover:bg-blue-700 transition-colors">
+                    <Icon name="floppy-disk" size={16} /> Uložiť
+                  </button>
+                </div>
+              </header>
+
+              <div className="px-6 mt-6 print:hidden">
+                <div className="flex space-x-1 bg-gray-200/50 p-1 rounded-lg w-fit">
+                  <button onClick={() => setActiveTab('harmonogram')} className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'harmonogram' ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200'}`}>
+                    <Icon name="calendar-days" size={18} /> Harmonogram
+                  </button>
+                  <button onClick={() => setActiveTab('gantt')} className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'gantt' ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200'}`}>
+                    <Icon name="chart-gantt" size={18} /> Ganttov diagram
+                  </button>
+                  <button onClick={() => setActiveTab('majetek')} className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'majetek' ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200'}`}>
+                    <Icon name="boxes-stacked" size={18} /> Majetok
+                  </button>
+                  <button onClick={() => setActiveTab('kontakty')} className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'kontakty' ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200'}`}>
+                    <Icon name="address-book" size={18} /> Kontakty
+                  </button>
+                </div>
+              </div>
+
+              <main className="flex-1 p-6 overflow-hidden flex flex-col print:p-0 print:overflow-visible bg-gray-100 print:bg-white">
+                
+                {/* HARMONOGRAM */}
+                {activeTab === 'harmonogram' && (
+                  <div className="bg-white rounded-xl shadow border border-gray-200 flex-1 flex flex-col overflow-hidden print:hidden">
+                    <div className="p-4 border-b flex justify-between items-center bg-gray-50/50 print:hidden">
+                      <h2 className="text-lg font-semibold text-gray-800">Zošit: Harmonogram úloh</h2>
+                      <button onClick={addTask} className="flex items-center gap-1 px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-md text-sm font-medium transition-colors">
+                        <Icon name="plus" size={16} /> Pridať riadok
+                      </button>
+                    </div>
+                    <div className="overflow-auto flex-1 print:overflow-visible">
+                      <table className="w-full text-left border-collapse min-w-max">
+                        <thead className="sticky top-0 bg-gray-100 border-b border-gray-300 z-10 shadow-sm print:static">
+                          <tr>
+                            <th className="p-3 w-8 print:hidden"></th>
+                            <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-16">Sekcia</th>
+                            <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-64">Názov úlohy / oblasti</th>
+                            <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-36">Začiatok</th>
+                            <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-36">Termín</th>
+                            <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-40">Zodpovedná osoba</th>
+                            <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-36">Stav</th>
+                            <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">Poznámka</th>
+                            <th className="p-3 w-10 print:hidden"></th>
+                          </tr>
+                        </thead>
+                        <tbody className="">
+                          {tasks.map((task, index) => {
+                            const currentTopLevel = task.wbs ? String(task.wbs).split('.')[0] : '';
+                            const prevTopLevel = index > 0 && tasks[index - 1].wbs ? String(tasks[index - 1].wbs).split('.')[0] : currentTopLevel;
+                            const isNewSection = index > 0 && currentTopLevel !== prevTopLevel && currentTopLevel !== '';
+                            const tdBorder = isNewSection ? 'border-t-[3px] border-t-gray-600' : 'border-t border-t-gray-200';
+                            
+                            const wbsParts = task.wbs ? String(task.wbs).split('.').filter(Boolean) : [];
+                            const depth = wbsParts.length;
+
+                            return (
+                            <tr key={task.id} className={`hover:bg-blue-50/30 transition-colors group ${draggedTaskIndex === index ? 'opacity-50 bg-blue-100' : ''}`} draggable onDragStart={() => setDraggedTaskIndex(index)} onDragOver={(e) => e.preventDefault()} onDrop={() => handleTaskDrop(index)}>
+                              <td className={`p-2 border-r border-r-gray-100 text-center cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 print:hidden ${tdBorder}`}>
+                                <Icon name="grip-vertical" size={16} />
+                              </td>
+                              <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}><InputCell value={task.wbs} onChange={(v) => updateTask(task.id, 'wbs', v)} placeholder="1.1" /></td>
+                              <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}>
+                                <div style={{ paddingLeft: depth > 1 ? `${(depth - 1) * 1.5}rem` : '0' }}><InputCell value={task.name} onChange={(v) => updateTask(task.id, 'name', v)} placeholder="Názov..." /></div>
+                              </td>
+                              <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}><InputCell value={task.startDate} onChange={(v) => updateTask(task.id, 'startDate', v)} type="date" /></td>
+                              <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}><InputCell value={task.deadline} onChange={(v) => updateTask(task.id, 'deadline', v)} type="date" /></td>
+                              <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}><UserSelect value={task.assignedTo} onChange={(v) => updateTask(task.id, 'assignedTo', v)} users={users} departments={departments} /></td>
+                              <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}><StatusSelect value={task.status} onChange={(v) => updateTask(task.id, 'status', v)} /></td>
+                              <td className={`p-2 border-r border-r-gray-100 flex items-center gap-1 ${tdBorder}`}><InputCell value={task.notes} onChange={(v) => updateTask(task.id, 'notes', v)} placeholder="Poznámka..." /></td>
+                              <td className={`p-2 text-center print:hidden ${tdBorder}`}>
+                                <button onClick={() => deleteTask(task.id)} className="text-red-400 hover:text-red-600 transition-colors p-1" title="Zmazať riadok"><Icon name="trash-can" size={16} /></button>
+                              </td>
+                            </tr>
+                          )})}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* GANTT CHART */}
+                {activeTab === 'gantt' && (
+                  <div className="bg-white rounded-xl shadow border border-gray-200 flex-1 flex flex-col overflow-hidden p-6 print:hidden">
+                    <h2 className="text-xl font-bold text-gray-800 mb-6 border-b pb-2">Ganttov diagram</h2>
+                    {!ganttData ? (
+                      <div className="flex-1 flex items-center justify-center text-gray-500 flex-col gap-2">
+                        <Icon name="chart-gantt" size={48} className="text-gray-300" />
+                        <p>Pre zobrazenie diagramu musia mať úlohy vyplnený <b>Začiatok</b> aj <b>Termín</b>.</p>
+                      </div>
+                    ) : (
+                      <div className="flex-1 overflow-auto"><div className="min-w-[800px]">
+                          <div className="flex border-b border-gray-300 pb-2 mb-4 relative">
+                            <div className="w-1/4 font-semibold text-gray-600 text-sm">Názov úlohy</div>
+                            <div className="w-3/4 relative h-6 border-l border-gray-300">
+                              <span className="absolute left-0 -translate-x-1/2 text-xs text-gray-500 bg-white px-1">{ganttData.minDate.toLocaleDateString('sk-SK')}</span>
+                              <span className="absolute right-0 translate-x-1/2 text-xs text-gray-500 bg-white px-1">{ganttData.maxDate.toLocaleDateString('sk-SK')}</span>
+                            </div>
+                          </div>
+                          <div className="space-y-3">
+                            {ganttData.validTasks.map(task => {
+                              const tStart = new Date(task.startDate).getTime();
+                              const tEnd = new Date(task.deadline).getTime();
+                              let leftPercent = ((tStart - ganttData.minDate.getTime()) / ganttData.totalTime) * 100;
+                              let widthPercent = ((tEnd - tStart) / ganttData.totalTime) * 100;
+                              if (widthPercent <= 0) widthPercent = 1;
+                              const statusColor = STATUS_OPTIONS.find(o => o.value === task.status)?.color.split(' ')[0] || 'bg-gray-400';
+                              return (
+                                <div key={task.id} className="flex items-center group">
+                                  <div className="w-1/4 pr-4 truncate text-sm font-medium text-gray-700">{task.wbs} {task.name}</div>
+                                  <div className="w-3/4 relative h-8 bg-gray-50 border-l border-gray-200 rounded-r">
+                                    <div className={`absolute h-6 top-1 rounded-md shadow-sm flex items-center px-2 text-xs font-medium text-gray-800 ${statusColor}`} style={{ left: `${leftPercent}%`, width: `${widthPercent}%`, minWidth: '24px' }}>
+                                      {widthPercent > 5 && <span className="truncate opacity-75">{new Date(task.startDate).toLocaleDateString('sk-SK').slice(0, -5)}</span>}
+                                    </div>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                      </div></div>
+                    )}
+                  </div>
+                )}
+
+                {/* MAJETOK */}
+                {activeTab === 'majetek' && (
+                  <div className="bg-white rounded-xl shadow border border-gray-200 flex-1 flex flex-col overflow-hidden print:hidden">
+                    <div className="p-4 border-b flex justify-between items-center bg-gray-50/50 print:hidden">
+                      <h2 className="text-lg font-semibold text-gray-800">Zošit: Rozpočet a Majetok</h2>
+                      <button onClick={addAsset} className="flex items-center gap-1 px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-md text-sm font-medium transition-colors">
+                        <Icon name="plus" size={16} /> Pridať položku
+                      </button>
+                    </div>
+                    <div className="overflow-auto flex-1 print:overflow-visible">
+                      <table className="w-full text-left border-collapse min-w-max">
+                        <thead className="sticky top-0 bg-gray-100 border-b border-gray-300 z-10 shadow-sm print:static">
+                          <tr>
+                            <th className="p-3 w-8 print:hidden"></th>
+                            <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">Názov položky</th>
+                            <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-24 text-right">Počet</th>
+                            <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-32 text-right">Cena / kus (€)</th>
+                            <th className="p-3 text-xs font-semibold text-gray-800 uppercase tracking-wider w-36 text-right bg-gray-200/50">Cena celkom</th>
+                            <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-48">Zodpovedná osoba</th>
+                            <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-40">Stav</th>
+                            <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-10 print:hidden"></th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200">
+                          {assets.map((asset, index) => {
+                            const rowTotal = Number(asset.quantity) * Number(asset.unitPrice);
+                            return (
+                              <tr key={asset.id} className={`hover:bg-blue-50/30 transition-colors group ${draggedAssetIndex === index ? 'opacity-50 bg-blue-100' : ''}`} draggable onDragStart={() => setDraggedAssetIndex(index)} onDragOver={(e) => e.preventDefault()} onDrop={() => handleAssetDrop(index)}>
+                                <td className="p-2 border-r border-gray-100 text-center cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 print:hidden"><Icon name="grip-vertical" size={16} /></td>
+                                <td className="p-2 border-r border-gray-100"><InputCell value={asset.name} onChange={(v) => updateAsset(asset.id, 'name', v)} placeholder="Názov majetku..." /></td>
+                                <td className="p-2 border-r border-gray-100"><input type="number" value={asset.quantity} onChange={(e) => updateAsset(asset.id, 'quantity', e.target.value)} className="w-full p-1 bg-transparent rounded outline-none hover:bg-gray-50 focus:bg-white focus:ring-1 focus:ring-blue-500 text-right" min="0" /></td>
+                                <td className="p-2 border-r border-gray-100"><input type="number" value={asset.unitPrice} onChange={(e) => updateAsset(asset.id, 'unitPrice', e.target.value)} className="w-full p-1 bg-transparent rounded outline-none hover:bg-gray-50 focus:bg-white focus:ring-1 focus:ring-blue-500 text-right" min="0" /></td>
+                                <td className="p-2 border-r border-gray-100 text-right font-medium text-gray-800 bg-gray-50/30">{rowTotal.toLocaleString('sk-SK')} €</td>
+                                <td className="p-2 border-r border-gray-100"><UserSelect value={asset.assignedTo} onChange={(v) => updateAsset(asset.id, 'assignedTo', v)} users={users} departments={departments} /></td>
+                                <td className="p-2 border-r border-gray-100"><StatusSelect value={asset.status} onChange={(v) => updateAsset(asset.id, 'status', v)} /></td>
+                                <td className="p-2 text-center print:hidden"><button onClick={() => deleteAsset(asset.id)} className="text-red-400 hover:text-red-600 transition-colors p-1" title="Zmazať riadok"><Icon name="trash-can" size={16} /></button></td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                        <tfoot className="sticky bottom-0 bg-gray-100 border-t-2 border-gray-300 print:static">
+                          <tr>
+                            <td colSpan="4" className="p-4 text-right font-bold text-gray-700">CELKOVÉ NÁKLADY NA MATERIÁL:</td>
+                            <td className="p-4 text-right font-bold text-xl text-blue-700 whitespace-nowrap">{totalAssetsCost.toLocaleString('sk-SK')} €</td>
+                            <td colSpan="3" className="print:hidden"></td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* KONTAKTY */}
+                {activeTab === 'kontakty' && (
+                  <div className="bg-white rounded-xl shadow border border-gray-200 flex-1 flex flex-col overflow-hidden print:hidden">
+                    <div className="p-4 border-b flex justify-between items-center bg-gray-50/50">
+                      <h2 className="text-lg font-semibold text-gray-800">Zošit: Adresár kontaktov</h2>
+                      <button onClick={addContact} className="flex items-center gap-1 px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-md text-sm font-medium transition-colors">
+                        <Icon name="plus" size={16} /> Pridať kontakt
+                      </button>
+                    </div>
+                    <div className="overflow-auto flex-1">
+                      <table className="w-full text-left border-collapse min-w-max">
+                        <thead className="sticky top-0 bg-gray-100 border-b border-gray-300 z-10 shadow-sm">
+                          <tr>
+                            <th className="p-3 w-8"></th>
+                            <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">Meno a priezvisko</th>
+                            <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-64">Pozícia</th>
+                            <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-64">E-mail</th>
+                            <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-48">Tel. číslo</th>
+                            <th className="p-3 w-10"></th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200">
+                          {contacts.map((contact, index) => (
+                            <tr key={contact.id} className={`hover:bg-blue-50/30 transition-colors group ${draggedContactIndex === index ? 'opacity-50 bg-blue-100' : ''}`} draggable onDragStart={() => setDraggedContactIndex(index)} onDragOver={(e) => e.preventDefault()} onDrop={() => handleContactDrop(index)}>
+                              <td className="p-2 border-r border-gray-100 text-center cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500"><Icon name="grip-vertical" size={16} /></td>
+                              <td className="p-2 border-r border-gray-100"><InputCell value={contact.name} onChange={(v) => updateContact(contact.id, 'name', v)} placeholder="Napr. Ján Novák" /></td>
+                              <td className="p-2 border-r border-gray-100"><InputCell value={contact.position} onChange={(v) => updateContact(contact.id, 'position', v)} placeholder="Napr. Manažér pobočky" /></td>
+                              <td className="p-2 border-r border-gray-100"><InputCell value={contact.email} onChange={(v) => updateContact(contact.id, 'email', v)} type="email" placeholder="jan@firma.sk" /></td>
+                              <td className="p-2 border-r border-gray-100"><InputCell value={contact.phone} onChange={(v) => updateContact(contact.id, 'phone', v)} type="tel" placeholder="+421..." /></td>
+                              <td className="p-2 text-center"><button onClick={() => deleteContact(contact.id)} className="text-red-400 hover:text-red-600 transition-colors p-1"><Icon name="trash-can" size={16} /></button></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* PDF PRINT VIEW */}
+                <div className="hidden print:block flex-1 overflow-visible">
+                  <div className="max-w-[210mm] mx-auto bg-white min-h-[297mm] p-0 w-full">
+                    <div className="flex justify-between items-end border-b-2 border-gray-800 pb-4 mb-8">
+                      <img src={LOGO_URL} alt="Logo" className="h-14 object-contain" />
+                      <div className="text-right">
+                        <h1 className="text-2xl font-bold text-gray-900 leading-tight">{currentProject.name}</h1>
+                        <p className="text-sm text-gray-500 mt-1">Stav k dátumu: {new Date().toLocaleDateString('sk-SK')}</p>
+                      </div>
+                    </div>
+                    <div className="mb-10">
+                      <h2 className="text-lg font-bold text-gray-800 mb-4 uppercase tracking-wide">1. Harmonogram úloh</h2>
+                      <table className="w-full text-left border-collapse text-sm">
+                        <thead>
+                          <tr className="border-b-2 border-gray-800">
+                            <th className="py-2 pr-2 font-bold text-gray-800 w-12">WBS</th>
+                            <th className="py-2 pr-2 font-bold text-gray-800">Názov úlohy</th>
+                            <th className="py-2 pr-2 font-bold text-gray-800 w-24">Začiatok</th>
+                            <th className="py-2 pr-2 font-bold text-gray-800 w-24">Termín</th>
+                            <th className="py-2 pr-2 font-bold text-gray-800 w-32">Zodpovednosť</th>
+                            <th className="py-2 font-bold text-gray-800 w-32">Stav</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200">
+                          {tasks.map((task) => {
+                            const statusLabel = STATUS_OPTIONS.find(o => o.value === task.status)?.label || '-';
+                            const userName = users.find(u => u.id === task.assignedTo)?.name || '-';
+                            const wbsParts = task.wbs ? String(task.wbs).split('.').filter(Boolean) : [];
+                            const depth = wbsParts.length;
+                            return (
+                              <tr key={task.id} className="break-inside-avoid">
+                                <td className="py-2 pr-2 text-gray-600 align-top">{task.wbs}</td>
+                                <td className="py-2 pr-2 text-gray-900 font-medium align-top">
+                                  <div style={{ paddingLeft: depth > 1 ? `${(depth - 1) * 1.5}rem` : '0' }}>{task.name}{task.notes && <div className="text-xs text-gray-500 font-normal mt-0.5">{task.notes}</div>}</div>
+                                </td>
+                                <td className="py-2 pr-2 text-gray-700 align-top">{task.startDate ? new Date(task.startDate).toLocaleDateString('sk-SK') : '-'}</td>
+                                <td className="py-2 pr-2 text-gray-700 align-top">{task.deadline ? new Date(task.deadline).toLocaleDateString('sk-SK') : '-'}</td>
+                                <td className="py-2 pr-2 text-gray-700 align-top">{userName}</td>
+                                <td className="py-2 text-gray-700 align-top">{statusLabel}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="mb-10 break-inside-avoid">
+                      <h2 className="text-lg font-bold text-gray-800 mb-4 uppercase tracking-wide">2. Rozpočet a Majetok</h2>
+                      <table className="w-full text-left border-collapse text-sm">
+                        <thead>
+                          <tr className="border-b-2 border-gray-800">
+                            <th className="py-2 pr-2 font-bold text-gray-800">Názov položky</th>
+                            <th className="py-2 pr-2 font-bold text-gray-800 text-right w-20">Počet</th>
+                            <th className="py-2 pr-2 font-bold text-gray-800 text-right w-28">Cena/ks</th>
+                            <th className="py-2 pr-2 font-bold text-gray-800 text-right w-32">Celkom</th>
+                            <th className="py-2 font-bold text-gray-800 w-32 pl-4">Zodpovednosť</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200">
+                          {assets.map((asset) => {
+                            const rowTotal = Number(asset.quantity) * Number(asset.unitPrice);
+                            const userName = users.find(u => u.id === asset.assignedTo)?.name || '-';
+                            return (
+                              <tr key={asset.id}>
+                                <td className="py-2 pr-2 text-gray-900 font-medium">{asset.name || '-'}</td>
+                                <td className="py-2 pr-2 text-gray-700 text-right">{asset.quantity}</td>
+                                <td className="py-2 pr-2 text-gray-700 text-right">{Number(asset.unitPrice).toLocaleString('sk-SK')} €</td>
+                                <td className="py-2 pr-2 text-gray-900 font-semibold text-right">{rowTotal.toLocaleString('sk-SK')} €</td>
+                                <td className="py-2 text-gray-700 pl-4">{userName}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                        <tfoot>
+                          <tr>
+                            <td colSpan="3" className="py-4 text-right font-bold text-gray-800 uppercase text-xs">Celkové náklady:</td>
+                            <td className="py-4 text-right font-bold text-lg text-gray-900 whitespace-nowrap">{totalAssetsCost.toLocaleString('sk-SK')} €</td>
+                            <td></td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                    {contacts.length > 0 && (
+                      <div className="mb-10 break-inside-avoid">
+                        <h2 className="text-lg font-bold text-gray-800 mb-4 uppercase tracking-wide">3. Kontakty</h2>
+                        <table className="w-full text-left border-collapse text-sm">
+                          <thead>
+                            <tr className="border-b-2 border-gray-800">
+                              <th className="py-2 pr-2 font-bold text-gray-800">Meno a priezvisko</th>
+                              <th className="py-2 pr-2 font-bold text-gray-800">Pozícia</th>
+                              <th className="py-2 pr-2 font-bold text-gray-800">E-mail</th>
+                              <th className="py-2 font-bold text-gray-800">Tel. číslo</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-200">
+                            {contacts.map((contact) => (
+                              <tr key={contact.id}>
+                                <td className="py-2 pr-2 text-gray-900 font-medium">{contact.name || '-'}</td>
+                                <td className="py-2 pr-2 text-gray-700">{contact.position || '-'}</td>
+                                <td className="py-2 pr-2 text-gray-700">{contact.email || '-'}</td>
+                                <td className="py-2 text-gray-700">{contact.phone || '-'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+              </main>
+            </div>
+          );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
+

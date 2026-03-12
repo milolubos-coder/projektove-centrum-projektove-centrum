@@ -26,7 +26,7 @@
             .print\:static { position: static !important; }
             @page { margin: 0; size: A4 portrait; }
             
-            /* Ak tlačíme bežný report, skryjeme sekciu Gantt */
+            /* Ak tlačíme bežný report (Harmonogram), skryjeme sekciu Gantt */
             body:not(.printing-gantt) .print-gantt-only { display: none !important; }
             body:not(.printing-gantt) .print-report-only { display: block !important; }
             
@@ -48,7 +48,7 @@
         const { useState, useEffect, useMemo } = React;
 
         // --- VERZIA APLIKÁCIE ---
-        const APP_VERSION = "Verzia: 12.03.2026, 21:18 (Gantt Export & Názvoslovie)";
+        const APP_VERSION = "Verzia: 12.03.2026, 21:30 (Iba Harmonogram v PDF & Fix pre Safari Tlač)";
 
         // ==========================================
         // VÁŠ FIREBASE KĽÚČ
@@ -179,6 +179,15 @@
             return () => unsubscribe();
           }, [user]);
 
+          // Event listener pre vyčistenie tried po tlači (čisté riešenie pre Safari)
+          useEffect(() => {
+            const handleAfterPrint = () => {
+              document.body.classList.remove('printing-gantt');
+            };
+            window.addEventListener('afterprint', handleAfterPrint);
+            return () => window.removeEventListener('afterprint', handleAfterPrint);
+          }, []);
+
           const handleLogin = async () => {
             try {
               await signInWithPopup(auth, googleProvider);
@@ -198,7 +207,7 @@
             catch (e) { console.error("Error saving to cloud:", e); }
           };
 
-          // Funkcie pre tlač s upravenými CSS triedami body
+          // --- PRIAME VOLANIA TLAČE BEZ ČASOVAČA (FIX PRE SAFARI) ---
           const handlePrintReport = () => {
             document.body.classList.remove('printing-gantt');
             window.print();
@@ -207,10 +216,6 @@
           const handlePrintGantt = () => {
             document.body.classList.add('printing-gantt');
             window.print();
-            // Odstránenie triedy po vytlačení, aby sa nepokazil ďalší print
-            setTimeout(() => {
-              document.body.classList.remove('printing-gantt');
-            }, 1000);
           };
 
           if (authLoading) {
@@ -436,7 +441,7 @@
                   </div>
                 )}
 
-                {/* MODAL - Úprava práv pre existujúci projekt (Iba pre Admina) */}
+                {/* MODAL - Úprava práv pre existujúci projekt */}
                 {showAccessModal && (
                   <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
                     <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden flex flex-col">
@@ -685,6 +690,7 @@
             );
           }
 
+          // BEZPEČNOSTNÁ POISTKA PROTI BIELEJ OBRAZOVKE 
           if (activeProjectId && !currentProject) {
             return (
               <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6 text-center">
@@ -740,9 +746,8 @@
                   </div>
                 </div>
                 <div className="flex gap-3 print:hidden">
-                  {/* Nové tlačidlo pre Gantt */}
-                  <button onClick={handlePrintGantt} className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"><Icon name="chart-gantt" size={16} /> Vytlačiť Gantt</button>
-                  <button onClick={handlePrintReport} className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"><Icon name="print" size={16} /> Vytlačiť PDF</button>
+                  <button onClick={handlePrintGantt} className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"><Icon name="chart-gantt" size={16} /> Export Gantt</button>
+                  <button onClick={handlePrintReport} className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"><Icon name="file-pdf" size={16} /> Export PDF</button>
                 </div>
               </header>
 
@@ -944,7 +949,7 @@
                 )}
 
                 {/* ========================================================= */}
-                {/* --- BEŽNÝ PDF NÁHĽAD (TLAČÍ SA IBA CEZ "Vytlačiť PDF") --- */}
+                {/* --- BEŽNÝ PDF NÁHĽAD (TLAČÍ SA IBA CEZ "Export PDF") --- */}
                 {/* ========================================================= */}
                 <div className="hidden print:block flex-1 overflow-visible print-report-only">
                   <div className="max-w-[210mm] mx-auto bg-white min-h-[297mm] p-0 w-full">
@@ -956,8 +961,9 @@
                       </div>
                     </div>
                     
+                    {/* Iba Harmonogram */}
                     <div className="mb-10">
-                      <h2 className="text-lg font-bold text-gray-800 mb-4 uppercase tracking-wide">1. Harmonogram úloh</h2>
+                      <h2 className="text-lg font-bold text-gray-800 mb-4 uppercase tracking-wide">Harmonogram úloh</h2>
                       <table className="w-full text-left border-collapse text-sm">
                         <thead>
                           <tr className="border-b-2 border-gray-800">
@@ -988,71 +994,11 @@
                         </tbody>
                       </table>
                     </div>
-
-                    <div className="mb-10 break-inside-avoid">
-                      <h2 className="text-lg font-bold text-gray-800 mb-4 uppercase tracking-wide">2. Rozpočet a Majetok</h2>
-                      <table className="w-full text-left border-collapse text-sm">
-                        <thead>
-                          <tr className="border-b-2 border-gray-800">
-                            <th className="py-2 pr-2 font-bold text-gray-800">Názov položky</th>
-                            <th className="py-2 pr-2 font-bold text-gray-800 text-right w-20">Počet</th>
-                            <th className="py-2 pr-2 font-bold text-gray-800 text-right w-28">Cena/ks</th>
-                            <th className="py-2 pr-2 font-bold text-gray-800 text-right w-32">Celkom</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-200">
-                          {assets.map((asset) => {
-                            const rowTotal = Number(asset.quantity) * Number(asset.unitPrice);
-                            return (
-                              <tr key={asset.id}>
-                                <td className="py-2 pr-2 text-gray-900 font-medium">{asset.name || '-'}</td>
-                                <td className="py-2 pr-2 text-gray-700 text-right">{asset.quantity}</td>
-                                <td className="py-2 pr-2 text-gray-700 text-right">{Number(asset.unitPrice).toLocaleString('sk-SK')} €</td>
-                                <td className="py-2 pr-2 text-gray-900 font-semibold text-right">{rowTotal.toLocaleString('sk-SK')} €</td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                        <tfoot>
-                          <tr>
-                            <td colSpan="3" className="py-4 text-right font-bold text-gray-800 uppercase text-xs">Celkové náklady:</td>
-                            <td className="py-4 text-right font-bold text-lg text-gray-900 whitespace-nowrap">{totalAssetsCost.toLocaleString('sk-SK')} €</td>
-                            <td></td>
-                          </tr>
-                        </tfoot>
-                      </table>
-                    </div>
-                    
-                    {contacts.length > 0 && (
-                      <div className="mb-10 break-inside-avoid">
-                        <h2 className="text-lg font-bold text-gray-800 mb-4 uppercase tracking-wide">3. Kontakty</h2>
-                        <table className="w-full text-left border-collapse text-sm">
-                          <thead>
-                            <tr className="border-b-2 border-gray-800">
-                              <th className="py-2 pr-2 font-bold text-gray-800">Meno a priezvisko</th>
-                              <th className="py-2 pr-2 font-bold text-gray-800">Pozícia</th>
-                              <th className="py-2 pr-2 font-bold text-gray-800">E-mail</th>
-                              <th className="py-2 font-bold text-gray-800">Tel. číslo</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-200">
-                            {contacts.map((contact) => (
-                              <tr key={contact.id}>
-                                <td className="py-2 pr-2 text-gray-900 font-medium">{contact.name || '-'}</td>
-                                <td className="py-2 pr-2 text-gray-700">{contact.position || '-'}</td>
-                                <td className="py-2 pr-2 text-gray-700">{contact.email || '-'}</td>
-                                <td className="py-2 text-gray-700">{contact.phone || '-'}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
                   </div>
                 </div>
 
                 {/* ========================================================= */}
-                {/* --- GANTT PDF NÁHĽAD (TLAČÍ SA IBA CEZ "Vytlačiť Gantt") --- */}
+                {/* --- GANTT PDF NÁHĽAD (TLAČÍ SA IBA CEZ "Export Gantt") --- */}
                 {/* ========================================================= */}
                 <div className="hidden print:block flex-1 overflow-visible print-gantt-only w-[297mm]">
                   <div className="flex justify-between items-end border-b-2 border-gray-800 pb-4 mb-6">

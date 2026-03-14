@@ -21,7 +21,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
     <style>
-        /* Skrytý kontajner pre generovanie PDF - nie je ho vidieť na obrazovke, ale knižnica ho dokáže odfotiť */
+        /* Skrytý kontajner pre generovanie PDF */
         .pdf-export-hidden {
             position: absolute;
             top: -9999px;
@@ -29,12 +29,8 @@
             background-color: white;
             z-index: -10;
         }
-        .pdf-export-hidden.gantt-mode {
-            width: 297mm;
-        }
-        .pdf-export-hidden.report-mode {
-            width: 210mm;
-        }
+        .pdf-export-hidden.gantt-mode { width: 297mm; }
+        .pdf-export-hidden.report-mode { width: 210mm; }
         
         @media print {
             body { -webkit-print-color-adjust: exact; print-color-adjust: exact; background-color: white !important; }
@@ -42,7 +38,7 @@
             @page { margin: 0; size: auto; }
         }
         
-        /* Zlepšený scrollbar pre tabuľky */
+        /* Zlepšený scrollbar */
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
@@ -59,8 +55,7 @@
 
         const { useState, useEffect, useMemo } = React;
 
-        // --- VERZIA APLIKÁCIE ---
-        const APP_VERSION = "Verzia: 15.03.2026, 16:30 (Filtrovanie, Stavy a Zodp. osoby)";
+        const APP_VERSION = "Verzia: 15.03.2026, 16:35 (Filtrovanie, Stavy, Vyhľadávanie osôb + Tím)";
 
         // ==========================================
         // VÁŠ FIREBASE KĽÚČ
@@ -79,8 +74,6 @@
         const auth = getAuth(app);
         const db = getFirestore(app);
         const googleProvider = new GoogleAuthProvider();
-
-        // ==========================================
 
         const Icon = ({ name, size = 16, className = "" }) => (
             <i className={`fa-solid fa-${name} ${className}`} style={{ fontSize: size }}></i>
@@ -113,19 +106,14 @@
           </select>
         );
 
-        // --- KOMPONENT: Výber viacerých osôb v tabuľke (S VYHĽADÁVANÍM) ---
+        // --- KOMPONENT: Výber viacerých osôb v tabuľke úloh S VYHĽADÁVANÍM ---
         const MultiUserSelect = ({ value, onChange, users, departments }) => {
             const [open, setOpen] = useState(false);
             const [searchTerm, setSearchTerm] = useState('');
             
             const valArray = Array.isArray(value) ? value : (value ? [value] : []);
-            
-            const selectedNames = valArray.map(id => {
-                const u = users.find(user => user.id === id);
-                return u ? u.name : null;
-            }).filter(Boolean).join(', ');
+            const selectedNames = valArray.map(id => users.find(user => user.id === id)?.name).filter(Boolean).join(', ');
 
-            // Filtrovanie používateľov podľa vyhľadávania
             const filteredUsers = users.filter(u => 
                 (u.name || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
                 (u.prefix || '').toLowerCase().includes(searchTerm.toLowerCase())
@@ -141,7 +129,6 @@
                     
                     {open && (
                         <div className="absolute z-50 mt-1 w-64 bg-white border border-gray-200 shadow-xl rounded-md max-h-72 flex flex-col left-0">
-                            {/* Vyhľadávacie pole */}
                             <div className="p-2 border-b border-gray-200 bg-gray-50 sticky top-0 z-10">
                                 <div className="relative">
                                     <Icon name="magnifying-glass" className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs" />
@@ -217,7 +204,6 @@
                         const statusLabel = STATUS_OPTIONS.find(o => o.value === task.status)?.label || '-';
                         const valArray = Array.isArray(task.assignedTo) ? task.assignedTo : (task.assignedTo ? [task.assignedTo] : []);
                         const userName = valArray.map(id => globalUsers.find(u => u.id === id)?.name).filter(Boolean).join(', ') || '-';
-                        
                         const depth = task.wbs ? String(task.wbs).split('.').filter(Boolean).length : 0;
                         return (
                             <tr key={task.id}>
@@ -250,10 +236,7 @@
             let firstMonday = new Date(currDate.setDate(diffToMonday));
             firstMonday.setHours(0,0,0,0);
             
-            if (firstMonday < ganttData.minDate) {
-                firstMonday.setDate(firstMonday.getDate() + 7);
-            }
-
+            if (firstMonday < ganttData.minDate) firstMonday.setDate(firstMonday.getDate() + 7);
             while (firstMonday <= ganttData.maxDate) {
                 weeks.push(new Date(firstMonday));
                 firstMonday.setDate(firstMonday.getDate() + 7);
@@ -324,23 +307,7 @@
             { id: 'u2', deptId: 'd1', prefix: '1.2.', name: 'Pavel K.', email: 'pavel@firma.sk', position: 'Asistent', notifyDays: 1 },
             { id: 'u3', deptId: 'd2', prefix: '2.1.', name: 'Ján Novák', email: 'jan.novak@firma.sk', position: 'Špecialista BOZP', notifyDays: 3 },
           ],
-          projects: [
-            {
-              id: 'p1', name: 'Projekt: Rekonštrukcia pobočky', isTemplate: false, 
-              lastModified: new Date().toLocaleDateString('sk-SK'),
-              lastModifiedTs: Date.now(),
-              createdAt: Date.now(),
-              projectStatus: 'active', // active / completed
-              startDate: '2026-02-01', endDate: '2026-05-01',
-              projectManagerId: 'u1',
-              allowedUsers: ['u3', 'u1'],
-              contacts: [{ id: 'c1', name: 'Karol Zima', position: 'Manažér pobočky', email: 'karol.zima@firma.sk', phone: '+421 900 123 456' }],
-              tasks: [
-                { id: 't1', wbs: '1.', name: 'BOZP', link: '', startDate: '', deadline: '', assignedTo: ['u3'], status: '1', notes: 'Zabezpečiť úvodné školenie' }
-              ],
-              assets: [{ id: 'a1', name: 'Ochranné prilby', quantity: 15, unitPrice: 450, assignedTo: ['u3'], status: '3' }]
-            }
-          ]
+          projects: []
         };
 
         function App() {
@@ -462,12 +429,11 @@
           }
 
           if (dbError) return <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6 text-center"><Icon name="ban" size={64} className="text-red-400 mb-4" /><h1 className="text-2xl font-bold text-gray-800 mb-2">Chyba pripojenia k databáze</h1><button onClick={handleLogout} className="mt-6 text-blue-600 underline">Odhlásiť sa</button></div>;
-          if (loading || !appState) return <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center"><Icon name="circle-notch" className="fa-spin text-blue-600 mb-4" size={40} /><p className="text-gray-500 font-medium animate-pulse">Sťahovanie dát zo servera...</p></div>;
+          if (loading || !appState) return <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center"><Icon name="circle-notch" className="fa-spin text-blue-600 mb-4" size={40} /><p className="text-gray-500 font-medium animate-pulse">Sťahovanie projektov zo servera...</p></div>;
 
           const isAdmin = appState.admins?.includes(user?.uid);
           const currentUserObj = appState.globalUsers?.find(u => u.email && u.email.toLowerCase() === user?.email?.toLowerCase());
-          const isInvited = !!currentUserObj;
-          const hasAccess = isAdmin || isInvited;
+          const hasAccess = isAdmin || !!currentUserObj;
 
           if (!hasAccess) {
             return (
@@ -538,30 +504,24 @@
           // ======================================================================
           if (!activeProjectId) {
             
-            // 1. Získať prístupné projekty
             let accessibleProjects = projects.filter(p => {
               if (p.isTemplate) return false;
               if (isAdmin) return true;
               return p.allowedUsers && currentUserObj && p.allowedUsers.includes(currentUserObj.id);
             });
 
-            // 2. Vyhľadávanie v názve
             if (dashboardSearch.trim() !== '') {
                 accessibleProjects = accessibleProjects.filter(p => p.name.toLowerCase().includes(dashboardSearch.toLowerCase()));
             }
 
-            // 3. Zoradenie
             accessibleProjects.sort((a, b) => {
                 if (dashboardSort === 'alpha_asc') return a.name.localeCompare(b.name);
                 if (dashboardSort === 'created_desc') return (b.createdAt || parseInt(b.id)) - (a.createdAt || parseInt(a.id));
-                // Default: modified_desc
                 return (b.lastModifiedTs || parseInt(b.id)) - (a.lastModifiedTs || parseInt(a.id));
             });
 
-            // 4. Rozdelenie podľa stavu
             const activeProjects = accessibleProjects.filter(p => p.projectStatus !== 'completed');
             const completedProjects = accessibleProjects.filter(p => p.projectStatus === 'completed');
-            
             const myTemplates = projects.filter(p => p.isTemplate);
 
             return (
@@ -718,7 +678,7 @@
 
                   {dashboardTab === 'projects' && (
                     <>
-                      {/* FILTER A ZORADENIE (Pre Všetkých) */}
+                      {/* FILTER A ZORADENIE */}
                       <div className="flex flex-col md:flex-row gap-4 mb-8 bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
                           <div className="flex-1 relative">
                               <Icon name="magnifying-glass" className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -838,7 +798,7 @@
                         <div className="flex justify-between items-center mb-6">
                           <div>
                             <h2 className="text-xl font-semibold text-gray-800 flex items-center gap-2"><Icon name="users" size={20}/> Štruktúra zamestnancov a Oprávnenia prístupu</h2>
-                            <p className="text-sm text-gray-500 mt-1">Tieto mená sa budú dať vyberať v roletkách. <b>Zadaný E-mail zároveň slúži ako POZVÁNKA do celej aplikácie.</b></p>
+                            <p className="text-sm text-gray-500 mt-1">Tieto mená sa budú dať vyberať v roletkách a môžete im prideliť prístup do konkrétneho projektu.</p>
                           </div>
                           <button onClick={() => updateCloudState({ departments: [...departments, { id: Date.now().toString(), prefix: '', name: '' }] })} className="flex items-center gap-1 px-4 py-2 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-md text-sm font-medium transition-colors">
                             <Icon name="plus" size={16} /> Pridať oddelenie
@@ -890,6 +850,7 @@
                   )}
                 </div>
 
+                {/* SPODNÁ LIŠTA */}
                 <div className="fixed bottom-0 left-0 w-full bg-gray-900 text-white p-2 px-6 text-xs flex justify-between items-center z-40 print:hidden shadow-lg">
                    <div className="flex items-center gap-4">
                      <span className="flex items-center gap-2">
@@ -960,7 +921,7 @@
                       <div className="mb-6 bg-blue-50/50 border border-blue-100 p-4 rounded-lg inline-block min-w-[300px]">
                           <span className="text-xs text-blue-800 uppercase tracking-wider font-bold mb-2 block">Zodpovedná osoba za projekt</span>
                           
-                          {/* Pre PDF Export zobrazíme len text. Pre web zobrazíme roletku s výberom. */}
+                          {/* Pre PDF Export zobrazíme len text. Pre web zobrazíme roletku. */}
                           {isExport ? (
                               <div className="text-lg font-bold text-blue-900 flex items-center gap-2 mt-1">
                                   <Icon name="user-tie" />
@@ -1095,11 +1056,10 @@
                               <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-64">Názov úlohy</th>
                               <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-32">Začiatok</th>
                               <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-32">Termín</th>
-                              {/* ZODPOVEDNÁ OSOBA -> MULTI SELECT */}
+                              {/* ZODPOVEDNÁ OSOBA -> MULTI SELECT so SEARCOM */}
                               <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-48">Zodpovednosť</th>
                               <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-36">Stav</th>
                               <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-48">Poznámka</th>
-                              {/* ODKAZ PRESUNUTÝ NA KONIEC */}
                               <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-48">Odkaz / Link</th>
                               <th className="p-3 w-10"></th>
                             </tr>
@@ -1129,7 +1089,7 @@
                                 <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}><InputCell value={task.startDate} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, startDate: v} : t)}))} type="date" /></td>
                                 <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}><InputCell value={task.deadline} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, deadline: v} : t)}))} type="date" /></td>
                                 
-                                {/* Výber viacerých osôb v tabuľke (S VYHĽADÁVANÍM) */}
+                                {/* Výber viacerých osôb v tabuľke */}
                                 <td className={`p-2 border-r border-r-gray-100 ${tdBorder} align-top`}>
                                   <MultiUserSelect value={task.assignedTo} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, assignedTo: v} : t)}))} users={globalUsers} departments={departments} />
                                 </td>
@@ -1137,7 +1097,6 @@
                                 <td className={`p-2 border-r border-r-gray-100 ${tdBorder} align-top`}><StatusSelect value={task.status} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, status: v} : t)}))} /></td>
                                 <td className={`p-2 border-r border-r-gray-100 ${tdBorder} align-top`}><InputCell value={task.notes} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, notes: v} : t)}))} placeholder="Poznámka..." /></td>
                                 
-                                {/* ODKAZ PRESUNUTÝ SEM */}
                                 <td className={`p-2 border-r border-r-gray-100 ${tdBorder} align-top`}>
                                   <div className="flex items-center gap-1">
                                     <InputCell value={task.link} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, link: v} : t)}))} placeholder="https://..." />
@@ -1311,7 +1270,7 @@
                      <img src={user?.photoURL || 'https://via.placeholder.com/30'} alt="Avatar" className="w-6 h-6 rounded-full border border-gray-600"/>
                      <span>{user?.displayName} ({user?.email})</span>
                    </span>
-                   <span className="border-l border-gray-700 pl-4">Práva: <span className={isAdmin ? 'text-green-400 font-bold' : 'text-blue-300 font-bold'}>{isAdmin ? 'Administrátor (Plný prístup)' : 'Člen rozjazdového tímu (Iba určené projekty)'}</span></span>
+                   <span className="border-l border-gray-700 pl-4">Práva: <span className={isAdmin ? 'text-green-400 font-bold' : 'text-blue-300 font-bold'}>{isAdmin ? 'Administrátor (Plný prístup)' : 'Člen rozjazdového tímu'}</span></span>
                  </div>
                  <div className="flex items-center gap-4">
                    {isAdmin && <div className="text-gray-400 border-r border-gray-700 pr-4 mr-1">{APP_VERSION}</div>}

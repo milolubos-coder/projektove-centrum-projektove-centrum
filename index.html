@@ -60,7 +60,7 @@
         const { useState, useEffect, useMemo } = React;
 
         // --- VERZIA APLIKÁCIE ---
-        const APP_VERSION = "Verzia: 15.03.2026, 16:00 (Tím v harmonograme, Pozície, Plný kód)";
+        const APP_VERSION = "Verzia: 14.03.2026, 15:40 (Oprava zobrazenia tvorcu projektu)";
 
         // ==========================================
         // VÁŠ FIREBASE KĽÚČ
@@ -178,6 +178,7 @@
                 <tbody className="divide-y divide-gray-200">
                     {tasks.map(task => {
                         const statusLabel = STATUS_OPTIONS.find(o => o.value === task.status)?.label || '-';
+                        // Zlúčenie viacerých mien pre export
                         const valArray = Array.isArray(task.assignedTo) ? task.assignedTo : (task.assignedTo ? [task.assignedTo] : []);
                         const userName = valArray.map(id => globalUsers.find(u => u.id === id)?.name).filter(Boolean).join(', ') || '-';
                         
@@ -203,16 +204,20 @@
             </table>
         );
 
+        // --- GANTT RENDERER S TÝŽDŇOVOU MRIEŽKOU ---
         const ExportGantt = ({ ganttData }) => {
             if (!ganttData) return <div className="text-center text-gray-500 py-10 italic">Pre zobrazenie diagramu musia mať úlohy vyplnený Začiatok aj Termín.</div>;
             
+            // Generovanie týždňov (Pondelky)
             const weeks = [];
             let currDate = new Date(ganttData.minDate);
+            // Nájsť prvý pondelok po alebo presne v minDate
             let dayOfWeek = currDate.getDay();
             let diffToMonday = currDate.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
             let firstMonday = new Date(currDate.setDate(diffToMonday));
             firstMonday.setHours(0,0,0,0);
             
+            // Ak je prvý pondelok PRED minDate, posunieme sa o týždeň
             if (firstMonday < ganttData.minDate) {
                 firstMonday.setDate(firstMonday.getDate() + 7);
             }
@@ -227,6 +232,7 @@
                     <div className="flex border-b-2 border-gray-400 pb-2 mb-4 relative z-20 bg-white/80">
                         <div className="w-1/4 font-bold text-gray-800 text-sm">Názov úlohy</div>
                         <div className="w-3/4 relative h-6 border-l-2 border-gray-400">
+                            {/* Týždňové štítky v hlavičke */}
                             {weeks.map(w => {
                                 const lp = ((w.getTime() - ganttData.minDate.getTime()) / ganttData.totalTime) * 100;
                                 return (
@@ -241,6 +247,7 @@
                     </div>
                     
                     <div className="relative">
+                        {/* Zvislé čiary pre týždne (pozadie) */}
                         <div className="absolute inset-0 z-0">
                              <div className="w-1/4 h-full float-left border-r border-gray-200"></div>
                              <div className="w-3/4 h-full float-left relative">
@@ -251,6 +258,7 @@
                              </div>
                         </div>
 
+                        {/* Úlohy (V popredí) */}
                         <div className="space-y-3 relative z-10">
                             {ganttData.validTasks.map(task => {
                                 const tStart = new Date(task.startDate).getTime();
@@ -309,6 +317,7 @@
           const [loading, setLoading] = useState(true);
           const [dbError, setDbError] = useState(false);
 
+          // Stav pre indikátor sťahovania PDF
           const [isExporting, setIsExporting] = useState(null);
 
           const [activeTab, setActiveTab] = useState('harmonogram');
@@ -354,6 +363,7 @@
             return () => unsubscribe();
           }, [user]);
 
+          // Prihlasovanie cez Popup
           const handleLogin = async () => {
             try {
               await signInWithPopup(auth, googleProvider);
@@ -373,6 +383,7 @@
             catch (e) { console.error("Error saving to cloud:", e); }
           };
 
+          // --- PRIAMY EXPORT DO PDF CEZ JSPDF ---
           const exportToPDF = (type) => {
             setIsExporting(type);
             
@@ -522,7 +533,7 @@
               startDate: '',
               endDate: '',
               createdBy: user.uid,
-              createdByName: user.displayName || user.email,
+              createdByName: user.displayName || user.email || 'Neznámy',
               allowedUsers: finalAllowedUsers,
               contacts: [], tasks: [], assets: [] 
             };
@@ -536,7 +547,7 @@
                 newProject.isTemplate = false;
                 newProject.lastModified = new Date().toLocaleDateString('sk-SK');
                 newProject.createdBy = user.uid;
-                newProject.createdByName = user.displayName || user.email;
+                newProject.createdByName = user.displayName || user.email || 'Neznámy';
                 newProject.allowedUsers = finalAllowedUsers;
               }
             }
@@ -555,7 +566,7 @@
             newProject.isTemplate = false;
             newProject.lastModified = new Date().toLocaleDateString('sk-SK');
             newProject.createdBy = user.uid;
-            newProject.createdByName = user.displayName || user.email;
+            newProject.createdByName = user.displayName || user.email || 'Neznámy';
             newProject.allowedUsers = currentUserObj ? [currentUserObj.id] : [];
             
             updateCloudState({ projects: [...projects, newProject] });
@@ -707,7 +718,7 @@
                   </div>
                 )}
 
-                <div className="max-w-7xl mx-auto flex-1 w-full pb-20">
+                <div className="max-w-6xl mx-auto flex-1 w-full pb-20">
                   <header className="mb-6 flex justify-between items-end pb-4 border-b border-gray-200">
                     <div className="flex flex-col gap-4">
                       <img src={LOGO_URL} alt="Logo spoločnosti" className="h-10 object-contain self-start rounded" />
@@ -723,7 +734,7 @@
                       {isAdmin && (
                         <button onClick={() => {
                            const newId = Date.now().toString();
-                           updateCloudState({ projects: [...projects, { id: newId, name: 'Nová šablóna', isTemplate: true, lastModified: new Date().toLocaleDateString('sk-SK'), createdBy: user.uid, createdByName: user.displayName || user.email, contacts: [], tasks: [], assets: [] }] });
+                           updateCloudState({ projects: [...projects, { id: newId, name: 'Nová šablóna', isTemplate: true, lastModified: new Date().toLocaleDateString('sk-SK'), startDate: '', endDate: '', createdBy: user.uid, createdByName: user.displayName || user.email || 'Neznámy', contacts: [], tasks: [], assets: [] }] });
                            setActiveProjectId(newId);
                         }} className="flex items-center gap-2 px-4 py-2 bg-purple-50 text-purple-700 border border-purple-200 rounded-md shadow-sm text-sm font-medium hover:bg-purple-100 transition-colors">
                           <Icon name="file-lines" size={16} /> Nová šablóna
@@ -750,10 +761,10 @@
                     <>
                       <section className="mb-10">
                         <h2 className="text-xl font-semibold text-gray-700 mb-4 flex items-center gap-2"><Icon name="folder" size={20}/> Aktívne projekty ({myProjects.length})</h2>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                           {myProjects.map(proj => (
                             <div key={proj.id} className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow relative group cursor-pointer" onClick={() => setActiveProjectId(proj.id)}>
-                              <h3 className="font-semibold text-lg text-gray-800 mb-2 truncate pr-14" title={proj.name}>{proj.name}</h3>
+                              <h3 className="font-semibold text-lg text-gray-800 mb-2 truncate pr-14">{proj.name}</h3>
                               <div className="text-sm text-gray-500 mb-4">
                                 <p>Úlohy: {(proj.tasks||[]).length} | Majetok: {(proj.assets||[]).length}</p>
                                 <p className="text-xs mt-1 text-gray-400">
@@ -789,11 +800,11 @@
                       {isAdmin && myTemplates.length > 0 && (
                         <section>
                           <h2 className="text-xl font-semibold text-gray-700 mb-4 flex items-center gap-2"><Icon name="file-lines" size={20}/> Šablóny na použitie</h2>
-                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                             {myTemplates.map(tpl => (
                               <div key={tpl.id} className="bg-white p-5 rounded-xl border border-purple-200 shadow-sm hover:shadow-md transition-shadow relative group">
                                 <div className="flex justify-between items-start mb-2">
-                                  <h3 className="font-semibold text-lg text-purple-800 cursor-pointer hover:underline truncate" onClick={() => setActiveProjectId(tpl.id)} title={tpl.name}>{tpl.name}</h3>
+                                  <h3 className="font-semibold text-lg text-purple-800 cursor-pointer hover:underline truncate" onClick={() => setActiveProjectId(tpl.id)}>{tpl.name}</h3>
                                   {isAdmin && (
                                     <button onClick={() => deleteProject(tpl.id)} className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity" title="Zmazať šablónu">
                                       <Icon name="trash-can" size={18} />
@@ -845,7 +856,7 @@
                         <div className="flex justify-between items-center mb-6">
                           <div>
                             <h2 className="text-xl font-semibold text-gray-800 flex items-center gap-2"><Icon name="users" size={20}/> Štruktúra zamestnancov a Oprávnenia prístupu</h2>
-                            <p className="text-sm text-gray-500 mt-1">Tieto mená sa budú dať vyberať v roletkách. <b>Zadaný E-mail zároveň slúži ako POZVÁNKA (povolenie na prihlásenie) do aplikácie.</b></p>
+                            <p className="text-sm text-gray-500 mt-1">Tieto mená sa budú dať vyberať v roletkách a môžete im prideliť prístup do konkrétneho projektu. <b>Zadaný E-mail zároveň slúži ako POZVÁNKA (povolenie na prihlásenie) do celej aplikácie.</b></p>
                           </div>
                           <button onClick={() => updateCloudState({ departments: [...departments, { id: Date.now().toString(), prefix: '', name: '' }] })} className="flex items-center gap-1 px-4 py-2 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-md text-sm font-medium transition-colors">
                             <Icon name="plus" size={16} /> Pridať oddelenie
@@ -877,7 +888,7 @@
                                       <tr key={u.id} className="hover:bg-gray-50 transition-colors group">
                                         <td className="p-2 pl-4 border-r border-gray-50"><input value={u.prefix} onChange={e => updateCloudState({ globalUsers: globalUsers.map(usr => usr.id === u.id ? { ...usr, prefix: e.target.value } : usr) })} className="w-full p-1.5 border border-transparent hover:border-gray-300 focus:bg-white focus:border-blue-500 outline-none rounded" placeholder="1.1." /></td>
                                         <td className="p-2 border-r border-gray-50"><input value={u.name} onChange={e => updateCloudState({ globalUsers: globalUsers.map(usr => usr.id === u.id ? { ...usr, name: e.target.value } : usr) })} className="w-full p-1.5 border border-transparent hover:border-gray-300 focus:bg-white focus:border-blue-500 outline-none rounded" placeholder="Meno a priezvisko" /></td>
-                                        <td className="p-2 border-r border-gray-50"><input value={u.email} onChange={e => updateCloudState({ globalUsers: globalUsers.map(usr => usr.id === u.id ? { ...usr, email: e.target.value } : usr) })} type="email" className="w-full p-1.5 border border-transparent hover:border-gray-300 focus:bg-white focus:border-blue-500 outline-none rounded" placeholder="E-mail" /></td>
+                                        <td className="p-2 border-r border-gray-50"><input value={u.email} onChange={e => updateCloudState({ globalUsers: globalUsers.map(usr => usr.id === u.id ? { ...usr, email: e.target.value } : usr) })} type="email" className="w-full p-1.5 border border-transparent hover:border-gray-300 focus:bg-white focus:border-blue-500 outline-none rounded" placeholder="Prístupový Google E-mail" /></td>
                                         {/* NOVÉ POLE: POZÍCIA */}
                                         <td className="p-2 border-r border-gray-50"><input value={u.position || ''} onChange={e => updateCloudState({ globalUsers: globalUsers.map(usr => usr.id === u.id ? { ...usr, position: e.target.value } : usr) })} className="w-full p-1.5 border border-transparent hover:border-gray-300 focus:bg-white focus:border-blue-500 outline-none rounded" placeholder="Napr. Technik" /></td>
                                         
@@ -960,7 +971,6 @@
 
           // --- KOMPONENT PRE VYKRESLENIE TÍMU PROJEKTU ---
           const ProjectTeamSection = () => {
-              // Nájdeme ľudí, ktorí majú prístup do tohto projektu
               const allowedUsersList = globalUsers.filter(u => (currentProject.allowedUsers || []).includes(u.id));
               
               return (
@@ -1015,7 +1025,7 @@
                       {(isAdmin || !currentProject.isTemplate) && <Icon name="pen" size={16} className="text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity print:hidden" />}
                     </div>
                     
-                    {/* NOVINKA: Časový interval projektu */}
+                    {/* Časový interval projektu */}
                     <div className="flex items-center gap-2 mt-2 px-1 print:hidden">
                       <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${currentProject.isTemplate ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
                         {currentProject.isTemplate ? 'Šablóna' : 'Projekt'}
@@ -1109,7 +1119,6 @@
                                 <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}><InputCell value={task.startDate} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, startDate: v} : t)}))} type="date" /></td>
                                 <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}><InputCell value={task.deadline} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, deadline: v} : t)}))} type="date" /></td>
                                 
-                                {/* NOVÉ: Výber viacerých osôb v tabuľke */}
                                 <td className={`p-2 border-r border-r-gray-100 ${tdBorder} align-top`}>
                                   <MultiUserSelect value={task.assignedTo} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, assignedTo: v} : t)}))} users={globalUsers} departments={departments} />
                                 </td>
@@ -1117,7 +1126,6 @@
                                 <td className={`p-2 border-r border-r-gray-100 ${tdBorder} align-top`}><StatusSelect value={task.status} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, status: v} : t)}))} /></td>
                                 <td className={`p-2 border-r border-r-gray-100 ${tdBorder} align-top`}><InputCell value={task.notes} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, notes: v} : t)}))} placeholder="Poznámka..." /></td>
                                 
-                                {/* NOVÉ MIESTO PRE ODKAZ */}
                                 <td className={`p-2 border-r border-r-gray-100 ${tdBorder} align-top`}>
                                   <div className="flex items-center gap-1">
                                     <InputCell value={task.link} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, link: v} : t)}))} placeholder="https://..." />
@@ -1291,7 +1299,7 @@
                      <img src={user?.photoURL || 'https://via.placeholder.com/30'} alt="Avatar" className="w-6 h-6 rounded-full border border-gray-600"/>
                      <span>{user?.displayName} ({user?.email})</span>
                    </span>
-                   <span className="border-l border-gray-700 pl-4">Práva: <span className={isAdmin ? 'text-green-400 font-bold' : 'text-blue-300 font-bold'}>{isAdmin ? 'Administrátor (Plný prístup)' : 'Člen rozjazdového tímu'}</span></span>
+                   <span className="border-l border-gray-700 pl-4">Práva: <span className={isAdmin ? 'text-green-400 font-bold' : 'text-blue-300 font-bold'}>{isAdmin ? 'Administrátor (Plný prístup)' : 'Člen rozjazdového tímu (Iba určené projekty)'}</span></span>
                  </div>
                  <div className="flex items-center gap-4">
                    {isAdmin && <div className="text-gray-400 border-r border-gray-700 pr-4 mr-1">{APP_VERSION}</div>}

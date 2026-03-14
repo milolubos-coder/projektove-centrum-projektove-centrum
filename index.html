@@ -60,7 +60,7 @@
         const { useState, useEffect, useMemo } = React;
 
         // --- VERZIA APLIKÁCIE ---
-        const APP_VERSION = "Verzia: 14.03.2026, 15:40 (Oprava zobrazenia tvorcu projektu)";
+        const APP_VERSION = "Verzia: 14.03.2026, 15:50 (Zodpovedná osoba - výber)";
 
         // ==========================================
         // VÁŠ FIREBASE KĽÚČ
@@ -100,7 +100,21 @@
           </select>
         );
 
-        // --- KOMPONENT: Výber viacerých osôb v tabuľke ---
+        // --- KOMPONENT: Výber jednej osoby v roletke (napr. na zodpovednú osobu za projekt) ---
+        const UserSelect = ({ value, onChange, users, departments }) => (
+          <select value={value || ''} onChange={e => onChange(e.target.value)} className="w-full p-1 bg-transparent rounded outline-none hover:bg-gray-50 focus:bg-white focus:ring-1 focus:ring-blue-500">
+            <option value="">-- Nepriradené --</option>
+            {departments.map(dept => (
+              <optgroup key={dept.id} label={`${dept.prefix} ${dept.name}`}>
+                {users.filter(u => u.deptId === dept.id).map(u => (
+                  <option key={u.id} value={u.id}>{u.prefix} {u.name}</option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+        );
+
+        // --- KOMPONENT: Výber viacerých osôb v tabuľke úloh ---
         const MultiUserSelect = ({ value, onChange, users, departments }) => {
             const [open, setOpen] = useState(false);
             
@@ -299,7 +313,7 @@
             {
               id: 'p1', name: 'Projekt: Rekonštrukcia pobočky', isTemplate: false, lastModified: new Date().toLocaleDateString('sk-SK'),
               startDate: '2026-02-01', endDate: '2026-05-01',
-              createdBy: 'mock_admin', createdByName: 'Prvý Administrátor',
+              projectManagerId: 'u1',
               allowedUsers: ['u3', 'u1'],
               contacts: [{ id: 'c1', name: 'Karol Zima', position: 'Manažér pobočky', email: 'karol.zima@firma.sk', phone: '+421 900 123 456' }],
               tasks: [
@@ -363,7 +377,7 @@
             return () => unsubscribe();
           }, [user]);
 
-          // Prihlasovanie cez Popup
+          // Prihlasovanie
           const handleLogin = async () => {
             try {
               await signInWithPopup(auth, googleProvider);
@@ -532,8 +546,7 @@
               lastModified: new Date().toLocaleDateString('sk-SK'), 
               startDate: '',
               endDate: '',
-              createdBy: user.uid,
-              createdByName: user.displayName || user.email || 'Neznámy',
+              projectManagerId: currentUserObj?.id || '', // Zakladateľ je defaultne manažér (dá sa zmeniť)
               allowedUsers: finalAllowedUsers,
               contacts: [], tasks: [], assets: [] 
             };
@@ -546,8 +559,7 @@
                 newProject.name = newProjectName || `Nový projekt (z ${template.name})`;
                 newProject.isTemplate = false;
                 newProject.lastModified = new Date().toLocaleDateString('sk-SK');
-                newProject.createdBy = user.uid;
-                newProject.createdByName = user.displayName || user.email || 'Neznámy';
+                newProject.projectManagerId = currentUserObj?.id || '';
                 newProject.allowedUsers = finalAllowedUsers;
               }
             }
@@ -565,8 +577,7 @@
             newProject.name = `Nový projekt (z ${template.name})`;
             newProject.isTemplate = false;
             newProject.lastModified = new Date().toLocaleDateString('sk-SK');
-            newProject.createdBy = user.uid;
-            newProject.createdByName = user.displayName || user.email || 'Neznámy';
+            newProject.projectManagerId = currentUserObj?.id || '';
             newProject.allowedUsers = currentUserObj ? [currentUserObj.id] : [];
             
             updateCloudState({ projects: [...projects, newProject] });
@@ -734,7 +745,7 @@
                       {isAdmin && (
                         <button onClick={() => {
                            const newId = Date.now().toString();
-                           updateCloudState({ projects: [...projects, { id: newId, name: 'Nová šablóna', isTemplate: true, lastModified: new Date().toLocaleDateString('sk-SK'), startDate: '', endDate: '', createdBy: user.uid, createdByName: user.displayName || user.email || 'Neznámy', contacts: [], tasks: [], assets: [] }] });
+                           updateCloudState({ projects: [...projects, { id: newId, name: 'Nová šablóna', isTemplate: true, lastModified: new Date().toLocaleDateString('sk-SK'), startDate: '', endDate: '', projectManagerId: currentUserObj?.id || '', contacts: [], tasks: [], assets: [] }] });
                            setActiveProjectId(newId);
                         }} className="flex items-center gap-2 px-4 py-2 bg-purple-50 text-purple-700 border border-purple-200 rounded-md shadow-sm text-sm font-medium hover:bg-purple-100 transition-colors">
                           <Icon name="file-lines" size={16} /> Nová šablóna
@@ -961,7 +972,7 @@
             const dates = validTasks.flatMap(t => [new Date(t.startDate).getTime(), new Date(t.deadline).getTime()]);
             const minDate = new Date(Math.min(...dates));
             const maxDate = new Date(Math.max(...dates));
-            minDate.setDate(minDate.getDate() - 5); // Odsadenie pre lepšie zobrazenie
+            minDate.setDate(minDate.getDate() - 5); 
             maxDate.setDate(maxDate.getDate() + 5);
             const totalTime = maxDate.getTime() - minDate.getTime();
             ganttData = { validTasks, minDate, maxDate, totalTime, totalDays: totalTime / (1000 * 3600 * 24) };
@@ -970,19 +981,36 @@
           const totalAssetsCost = assets.reduce((sum, item) => sum + (Number(item.quantity || 0) * Number(item.unitPrice || 0)), 0);
 
           // --- KOMPONENT PRE VYKRESLENIE TÍMU PROJEKTU ---
-          const ProjectTeamSection = () => {
+          const ProjectTeamSection = ({ isExport = false }) => {
               const allowedUsersList = globalUsers.filter(u => (currentProject.allowedUsers || []).includes(u.id));
+              const pm = globalUsers.find(u => u.id === currentProject.projectManagerId);
               
               return (
-                  <div className="bg-white rounded-xl shadow border border-gray-200 mb-6 p-6">
+                  <div className={`bg-white rounded-xl shadow border border-gray-200 mb-6 p-6 ${isExport ? 'shadow-none border-none p-0' : ''}`}>
                       <h3 className="font-bold text-gray-800 mb-4 border-b pb-2 flex items-center gap-2"><Icon name="users" /> Tím projektu</h3>
                       
                       <div className="mb-6 bg-blue-50/50 border border-blue-100 p-4 rounded-lg inline-block min-w-[300px]">
-                          <span className="text-xs text-blue-800 uppercase tracking-wider font-bold mb-1 block">Zodpovedná osoba za projekt (Tvorca)</span>
-                          <div className="text-lg font-bold text-blue-900 flex items-center gap-2 mt-1">
-                              <Icon name="user-tie" />
-                              {currentProject.createdByName || 'Neznámy (Založené pred aktualizáciou)'}
-                          </div>
+                          <span className="text-xs text-blue-800 uppercase tracking-wider font-bold mb-2 block">Zodpovedná osoba za projekt</span>
+                          
+                          {/* Pre PDF Export zobrazíme len text. Pre web zobrazíme roletku. */}
+                          {isExport ? (
+                              <div className="text-lg font-bold text-blue-900 flex items-center gap-2 mt-1">
+                                  <Icon name="user-tie" />
+                                  {pm ? `${pm.name} ${pm.position ? `(${pm.position})` : ''}` : 'Nenastavené'}
+                              </div>
+                          ) : (
+                              <div className="flex items-center gap-2">
+                                  <Icon name="user-tie" className="text-blue-900" />
+                                  <div className="flex-1 bg-white border border-blue-200 rounded min-w-[200px]">
+                                      <UserSelect 
+                                          value={currentProject.projectManagerId} 
+                                          onChange={(v) => updateCurrentProject(p => ({...p, projectManagerId: v}))} 
+                                          users={globalUsers} 
+                                          departments={departments} 
+                                      />
+                                  </div>
+                              </div>
+                          )}
                       </div>
 
                       {allowedUsersList.length > 0 && (
@@ -993,7 +1021,7 @@
                                       const teamMembers = allowedUsersList.filter(u => u.deptId === dept.id);
                                       if (teamMembers.length === 0) return null;
                                       return (
-                                          <div key={dept.id} className="bg-gray-50 rounded border border-gray-200 p-3 shadow-sm">
+                                          <div key={dept.id} className="bg-gray-50 rounded border border-gray-200 p-3 shadow-sm page-break-inside-avoid">
                                               <div className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 border-b border-gray-200 pb-1">{dept.prefix} {dept.name}</div>
                                               <ul className="space-y-2">
                                                 {teamMembers.map(m => (
@@ -1069,7 +1097,7 @@
                   <div className="flex-1 flex flex-col overflow-hidden">
                     
                     {/* TÍM PROJEKTU V HARMONOGRAME */}
-                    <ProjectTeamSection />
+                    <ProjectTeamSection isExport={false} />
 
                     <div className="bg-white rounded-xl shadow border border-gray-200 flex-1 flex flex-col overflow-hidden print:hidden">
                       <div className="p-4 border-b flex justify-between items-center bg-gray-50/50">
@@ -1119,6 +1147,7 @@
                                 <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}><InputCell value={task.startDate} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, startDate: v} : t)}))} type="date" /></td>
                                 <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}><InputCell value={task.deadline} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, deadline: v} : t)}))} type="date" /></td>
                                 
+                                {/* Výber viacerých osôb v tabuľke */}
                                 <td className={`p-2 border-r border-r-gray-100 ${tdBorder} align-top`}>
                                   <MultiUserSelect value={task.assignedTo} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, assignedTo: v} : t)}))} users={globalUsers} departments={departments} />
                                 </td>
@@ -1126,6 +1155,7 @@
                                 <td className={`p-2 border-r border-r-gray-100 ${tdBorder} align-top`}><StatusSelect value={task.status} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, status: v} : t)}))} /></td>
                                 <td className={`p-2 border-r border-r-gray-100 ${tdBorder} align-top`}><InputCell value={task.notes} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, notes: v} : t)}))} placeholder="Poznámka..." /></td>
                                 
+                                {/* ODKAZ */}
                                 <td className={`p-2 border-r border-r-gray-100 ${tdBorder} align-top`}>
                                   <div className="flex items-center gap-1">
                                     <InputCell value={task.link} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, link: v} : t)}))} placeholder="https://..." />
@@ -1266,7 +1296,7 @@
                 
                 {/* Tím projektu sa tiež tlačí do PDF */}
                 <div className="mb-6 page-break-inside-avoid">
-                    <ProjectTeamSection />
+                    <ProjectTeamSection isExport={true} />
                 </div>
                 
                 <div className="mb-10">
@@ -1299,7 +1329,7 @@
                      <img src={user?.photoURL || 'https://via.placeholder.com/30'} alt="Avatar" className="w-6 h-6 rounded-full border border-gray-600"/>
                      <span>{user?.displayName} ({user?.email})</span>
                    </span>
-                   <span className="border-l border-gray-700 pl-4">Práva: <span className={isAdmin ? 'text-green-400 font-bold' : 'text-blue-300 font-bold'}>{isAdmin ? 'Administrátor (Plný prístup)' : 'Člen rozjazdového tímu (Iba určené projekty)'}</span></span>
+                   <span className="border-l border-gray-700 pl-4">Práva: <span className={isAdmin ? 'text-green-400 font-bold' : 'text-blue-300 font-bold'}>{isAdmin ? 'Administrátor (Plný prístup)' : 'Člen rozjazdového tímu'}</span></span>
                  </div>
                  <div className="flex items-center gap-4">
                    {isAdmin && <div className="text-gray-400 border-r border-gray-700 pr-4 mr-1">{APP_VERSION}</div>}

@@ -21,7 +21,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
     <style>
-        /* Skrytý kontajner pre generovanie PDF - nie je ho vidieť, ale knižnica ho dokáže odfotiť */
+        /* Skrytý kontajner pre generovanie PDF - nie je ho vidieť na obrazovke, ale knižnica ho dokáže odfotiť */
         .pdf-export-hidden {
             position: absolute;
             top: -9999px;
@@ -36,6 +36,7 @@
             width: 210mm;
         }
         
+        /* Poistka pre klasickú tlač (CTRL+P) */
         @media print {
             body { -webkit-print-color-adjust: exact; print-color-adjust: exact; background-color: white !important; }
             .print\:hidden { display: none !important; }
@@ -48,13 +49,13 @@
 
     <script type="text/babel" data-type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const { useState, useEffect, useMemo } = React;
 
         // --- VERZIA APLIKÁCIE ---
-        const APP_VERSION = "Verzia: 14.03.2026, 15:05 (Plný kód + Odkazy + Priamy Export)";
+        const APP_VERSION = "Verzia: 15.03.2026, 11:30 (Plná Stabilná Verzia + PDF Export)";
 
         // ==========================================
         // VÁŠ FIREBASE KĽÚČ
@@ -108,7 +109,7 @@
         );
 
         const InputCell = ({ value, onChange, type = "text", placeholder = "" }) => (
-          <input type={type} value={value || ''} onChange={e => onChange(e.target.value)} placeholder={placeholder} className="w-full p-1 bg-transparent rounded outline-none hover:bg-gray-50 focus:bg-white focus:ring-1 focus:ring-blue-500" />
+          <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} className="w-full p-1 bg-transparent rounded outline-none hover:bg-gray-50 focus:bg-white focus:ring-1 focus:ring-blue-500" />
         );
 
         const INITIAL_DB_STATE = {
@@ -172,7 +173,9 @@
 
           useEffect(() => {
             if (!user) return;
+            
             const stateRef = doc(db, 'artifacts', appId, 'public', 'data', 'config', 'main');
+
             const unsubscribe = onSnapshot(stateRef, (docSnap) => {
               if (docSnap.exists()) {
                 setAppState(docSnap.data());
@@ -185,10 +188,10 @@
               console.error("Firestore sync error:", error);
               setDbError(true);
             });
+
             return () => unsubscribe();
           }, [user]);
 
-          // Prihlasovanie cez Popup
           const handleLogin = async () => {
             try {
               await signInWithPopup(auth, googleProvider);
@@ -208,26 +211,30 @@
             catch (e) { console.error("Error saving to cloud:", e); }
           };
 
-          // --- PRIAMY EXPORT DO PDF CEZ JSPDF ---
+          // -----------------------------------------------------------------
+          // LOGIKA PRE PDF EXPORT
+          // -----------------------------------------------------------------
           const exportToPDF = (type) => {
             setIsExporting(type);
             
-            // Timeout pre zobrazenie indikátora načítavania
+            // Dáme UI čas na prekreslenie tlačidla (ukázanie "Generujem...")
             setTimeout(async () => {
               try {
                 const { jsPDF } = window.jspdf;
                 const elementId = type === 'gantt' ? 'gantt-export-container' : 'report-export-container';
                 const element = document.getElementById(elementId);
                 
-                if (!element) throw new Error("Element nenájdený");
+                if (!element) {
+                    throw new Error("Export container not found");
+                }
 
-                // Vyfotenie skrytého divu
+                // Generovanie obrázka zo skrytého divu
                 const canvas = await window.html2canvas(element, { 
-                    scale: 2, // 2x rozlíšenie pre lepšiu kvalitu
+                    scale: 2, 
                     useCORS: true,
                     logging: false,
                     backgroundColor: '#ffffff',
-                    windowWidth: type === 'gantt' ? 1122 : 794
+                    windowWidth: type === 'gantt' ? 1122 : 794 // A4 rozmer v pixeloch
                 });
                 
                 const imgData = canvas.toDataURL('image/jpeg', 1.0);
@@ -244,13 +251,12 @@
                 
                 pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
                 
-                // Názov súboru z názvu projektu
-                const projectNameClean = currentProject?.name?.replace(/[^a-z0-9]/gi, '_') || 'Projekt';
+                const projectNameClean = currentProject?.name?.replace(/[^a-zA-Z0-9]/g, '_') || 'Projekt';
                 pdf.save(`G4S_${projectNameClean}_${isGantt ? 'Gantt' : 'Harmonogram'}.pdf`);
                 
               } catch (err) {
-                console.error('Chyba pri exporte:', err);
-                alert('Nepodarilo sa vygenerovať PDF. Skúste to prosím znova.');
+                console.error('Chyba pri exporte', err);
+                alert('Nepodarilo sa vygenerovať PDF súbor. Skúste to znova.');
               } finally {
                 setIsExporting(null);
               }
@@ -402,7 +408,9 @@
              setShowAccessModal(null);
           };
 
+          // ======================================================================
           // --- VYKRESLENIE HLAVNEJ OBRAZOVKY (DASHBOARD) ---
+          // ======================================================================
           if (!activeProjectId) {
             const myProjects = projects.filter(p => {
               if (p.isTemplate) return false;
@@ -480,7 +488,7 @@
                   </div>
                 )}
 
-                {/* MODAL - Úprava práv pre existujúci projekt */}
+                {/* MODAL - Úprava práv pre existujúci projekt (Iba pre Admina) */}
                 {showAccessModal && (
                   <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
                     <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden flex flex-col">
@@ -738,7 +746,9 @@
             );
           }
 
+          // ======================================================================
           // --- VÝPOČTY PRE EDITOR KONKRÉTNEHO PROJEKTU ---
+          // ======================================================================
           const tasks = currentProject.tasks || [];
           const assets = currentProject.assets || [];
           const contacts = currentProject.contacts || [];
@@ -827,7 +837,7 @@
                             <th className="p-3 w-10"></th>
                           </tr>
                         </thead>
-                        <tbody>
+                        <tbody className="divide-y divide-gray-200">
                           {tasks.map((task, index) => {
                             const currentTopLevel = task.wbs ? String(task.wbs).split('.')[0] : '';
                             const prevTopLevel = index > 0 && tasks[index - 1].wbs ? String(tasks[index - 1].wbs).split('.')[0] : currentTopLevel;
@@ -849,6 +859,7 @@
                               <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}><InputCell value={task.wbs} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, wbs: v} : t)}))} placeholder="1.1" /></td>
                               <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}><div style={{ paddingLeft: depth > 1 ? `${(depth - 1) * 1.5}rem` : '0' }}><InputCell value={task.name} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, name: v} : t)}))} placeholder="Názov..." /></div></td>
                               
+                              {/* STĹPEC: ODKAZ */}
                               <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}>
                                 <div className="flex items-center gap-1">
                                   <InputCell value={task.link} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, link: v} : t)}))} placeholder="https://..." />
@@ -1008,6 +1019,7 @@
               {/* --- SKRYTÉ EXPORT KONTAJNERY PRE PDF SŤAHOVANIE --- */}
               {/* ========================================================================= */}
               
+              {/* EXPORT: HARMONOGRAM */}
               <div className="pdf-export-hidden report-mode" id="report-export-container" style={{ padding: '15mm' }}>
                 <div className="flex justify-between items-end border-b-2 border-gray-800 pb-4 mb-8">
                   <img src={LOGO_URL} alt="Logo" className="h-14 object-contain" />
@@ -1016,9 +1028,48 @@
                     <p className="text-sm text-gray-500 mt-1">Stav k dátumu: {new Date().toLocaleDateString('sk-SK')}</p>
                   </div>
                 </div>
-                <ExportTasks tasks={tasks} globalUsers={globalUsers} />
+                
+                <div className="mb-10">
+                  <h2 className="text-lg font-bold text-gray-800 mb-4 uppercase tracking-wide">Harmonogram úloh</h2>
+                  <table className="w-full text-left border-collapse text-sm">
+                    <thead>
+                      <tr className="border-b-2 border-gray-800">
+                        <th className="py-2 pr-2 font-bold text-gray-800 w-12">WBS</th>
+                        <th className="py-2 pr-2 font-bold text-gray-800">Názov úlohy</th>
+                        <th className="py-2 pr-2 font-bold text-gray-800 w-24">Začiatok</th>
+                        <th className="py-2 pr-2 font-bold text-gray-800 w-24">Termín</th>
+                        <th className="py-2 pr-2 font-bold text-gray-800 w-32">Zodpovednosť</th>
+                        <th className="py-2 font-bold text-gray-800 w-32">Stav</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {tasks.map((task) => {
+                        const statusLabel = STATUS_OPTIONS.find(o => o.value === task.status)?.label || '-';
+                        const userName = globalUsers.find(u => u.id === task.assignedTo)?.name || '-';
+                        const depth = task.wbs ? String(task.wbs).split('.').filter(Boolean).length : 0;
+                        return (
+                          <tr key={task.id} className="break-inside-avoid">
+                            <td className="py-2 pr-2 text-gray-600 align-top">{task.wbs}</td>
+                            <td className="py-2 pr-2 text-gray-900 font-medium align-top">
+                                <div style={{ paddingLeft: depth > 1 ? `${(depth - 1) * 1.5}rem` : '0' }}>
+                                    {task.name}
+                                    {task.notes && <div className="text-xs text-gray-500 font-normal mt-0.5">{task.notes}</div>}
+                                    {task.link && <div className="text-xs text-blue-500 font-normal truncate mt-0.5">Odkaz: {task.link}</div>}
+                                </div>
+                            </td>
+                            <td className="py-2 pr-2 text-gray-700 align-top">{task.startDate ? new Date(task.startDate).toLocaleDateString('sk-SK') : '-'}</td>
+                            <td className="py-2 pr-2 text-gray-700 align-top">{task.deadline ? new Date(task.deadline).toLocaleDateString('sk-SK') : '-'}</td>
+                            <td className="py-2 pr-2 text-gray-700 align-top">{userName}</td>
+                            <td className="py-2 text-gray-700 align-top">{statusLabel}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
 
+              {/* EXPORT: GANTT */}
               <div className="pdf-export-hidden gantt-mode" id="gantt-export-container" style={{ padding: '15mm' }}>
                 <div className="flex justify-between items-end border-b-2 border-gray-800 pb-4 mb-6">
                   <img src={LOGO_URL} alt="Logo" className="h-10 object-contain" />
@@ -1027,7 +1078,40 @@
                     <p className="text-xs text-gray-500 mt-1">Stav k dátumu: {new Date().toLocaleDateString('sk-SK')}</p>
                   </div>
                 </div>
-                <ExportGantt ganttData={ganttData} />
+
+                {!ganttData ? (
+                  <div className="text-center text-gray-500 py-10 italic">Pre zobrazenie diagramu musia mať úlohy vyplnený Začiatok aj Termín.</div>
+                ) : (
+                  <div>
+                    <div className="flex border-b border-gray-300 pb-2 mb-4 relative">
+                      <div className="w-1/3 font-bold text-gray-800 text-sm">Názov úlohy</div>
+                      <div className="w-2/3 relative h-4 border-l border-gray-300">
+                        <span className="absolute left-0 -translate-x-1/2 text-[10px] text-gray-600 bg-white px-1 font-bold">{ganttData.minDate.toLocaleDateString('sk-SK')}</span>
+                        <span className="absolute right-0 translate-x-1/2 text-[10px] text-gray-600 bg-white px-1 font-bold">{ganttData.maxDate.toLocaleDateString('sk-SK')}</span>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      {ganttData.validTasks.map(task => {
+                        const tStart = new Date(task.startDate).getTime();
+                        const tEnd = new Date(task.deadline).getTime();
+                        let leftPercent = ((tStart - ganttData.minDate.getTime()) / ganttData.totalTime) * 100;
+                        let widthPercent = ((tEnd - tStart) / ganttData.totalTime) * 100;
+                        if (widthPercent <= 0) widthPercent = 1;
+                        const statusColor = STATUS_OPTIONS.find(o => o.value === task.status)?.color.split(' ')[0] || 'bg-gray-400';
+                        return (
+                          <div key={task.id} className="flex items-center group page-break-inside-avoid">
+                            <div className="w-1/3 pr-4 truncate text-xs font-medium text-gray-800 border-r border-gray-200">{task.wbs} {task.name}</div>
+                            <div className="w-2/3 relative h-6">
+                              <div className={`absolute h-4 top-1 rounded flex items-center px-1 text-[9px] font-medium text-gray-900 ${statusColor} print:!bg-opacity-100`} style={{ left: `${leftPercent}%`, width: `${widthPercent}%`, minWidth: '16px' }}>
+                                {widthPercent > 8 && <span className="truncate opacity-80">{new Date(task.startDate).toLocaleDateString('sk-SK').slice(0, -5)} - {new Date(task.deadline).toLocaleDateString('sk-SK').slice(0, -5)}</span>}
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* SPODNÁ LIŠTA EDITOR - IDENTIFIKÁTOR A ODHLÁSENIE */}
@@ -1037,11 +1121,10 @@
                      <img src={user?.photoURL || 'https://via.placeholder.com/30'} alt="Avatar" className="w-6 h-6 rounded-full border border-gray-600"/>
                      <span>{user?.displayName} ({user?.email})</span>
                    </span>
-                   <span className="border-l border-gray-700 pl-4">Práva: <span className={isAdmin ? 'text-green-400 font-bold' : 'text-blue-300 font-bold'}>{isAdmin ? 'Administrátor (Plný prístup)' : 'Člen rozjazdového tímu (Iba určené projekty)'}</span></span>
+                   <span className="border-l border-gray-700 pl-4">Práva: <span className={isAdmin ? 'text-green-400 font-bold' : 'text-blue-300 font-bold'}>{isAdmin ? 'Administrátor (Plný prístup)' : 'Člen rozjazdového tímu'}</span></span>
                  </div>
                  <div className="flex items-center gap-4">
                    {isAdmin && <div className="text-gray-400 border-r border-gray-700 pr-4 mr-1">{APP_VERSION}</div>}
-                   <div><span className="text-gray-400">UID:</span> <code className="bg-gray-800 px-2 py-1 rounded select-all font-mono tracking-wider ml-1">{user?.uid}</code></div>
                    <button onClick={handleLogout} className="bg-gray-800 hover:bg-red-600 px-3 py-1 rounded transition-colors text-white border border-gray-700 hover:border-red-500">Odhlásiť sa</button>
                  </div>
               </div>

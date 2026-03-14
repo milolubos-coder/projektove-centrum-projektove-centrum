@@ -38,6 +38,11 @@
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        /* Tiene pre Baterkové grafy (čitateľnosť na všetkých farbách) */
+        .battery-text {
+            text-shadow: 0px 1px 3px rgba(0,0,0,0.9), 0px 0px 2px rgba(0,0,0,0.7);
+        }
     </style>
 </head>
 <body class="bg-gray-100 font-sans">
@@ -51,7 +56,7 @@
         const { useState, useEffect, useMemo } = React;
 
         // --- VERZIA APLIKÁCIE ---
-        const APP_VERSION = "Verzia: 15.03.2026, 17:00 (Oprava exportu a posúvania úloh)";
+        const APP_VERSION = "Verzia: 15.03.2026, 17:30 (Dashboard, Grafy a Baterky)";
 
         // ==========================================
         // VÁŠ FIREBASE KĽÚČ
@@ -77,9 +82,10 @@
             <i className={`fa-solid fa-${name} ${className}`} style={{ fontSize: size }}></i>
         );
 
+        // ZMENENÉ "V riešení" NA ORANŽOVÚ FARBU
         const STATUS_OPTIONS = [
           { value: '1', label: '1. Nevyriešené', color: 'bg-red-100 text-red-800' },
-          { value: '2', label: '2. V riešení', color: 'bg-blue-100 text-blue-800' },
+          { value: '2', label: '2. V riešení', color: 'bg-orange-100 text-orange-800' },
           { value: '3', label: '3. Vyriešené', color: 'bg-green-100 text-green-800' },
         ];
 
@@ -183,6 +189,52 @@
           <input type={type} value={value || ''} onChange={e => onChange(e.target.value)} placeholder={placeholder} className={`w-full p-1 bg-transparent rounded outline-none hover:bg-gray-50 focus:bg-white focus:ring-1 focus:ring-blue-500 border border-transparent hover:border-gray-200 ${className}`} />
         );
 
+        // --- BATERKOVÝ GRAF (Pre Dashbaord) ---
+        const BatteryChart = ({ title, subtitle, tasks }) => {
+            const total = tasks.length || 1; 
+            const c1 = tasks.filter(t => t.status === '1').length;
+            const c2 = tasks.filter(t => t.status === '2').length;
+            const c3 = tasks.filter(t => t.status === '3').length;
+            
+            const p1 = (c1 / total) * 100;
+            const p2 = (c2 / total) * 100;
+            const p3 = (c3 / total) * 100;
+            
+            const isEmpty = tasks.length === 0;
+
+            return (
+                <div className="relative w-full h-14 bg-gray-200 rounded-lg overflow-hidden flex shadow-inner border border-gray-300 transition-transform hover:scale-[1.01]">
+                    {isEmpty ? (
+                        <div className="w-full h-full bg-gray-100"></div>
+                    ) : (
+                        <>
+                            {p3 > 0 && <div style={{ width: `${p3}%` }} className="bg-green-500 h-full transition-all duration-500 border-r border-white/20"></div>}
+                            {p2 > 0 && <div style={{ width: `${p2}%` }} className="bg-orange-400 h-full transition-all duration-500 border-r border-white/20"></div>}
+                            {p1 > 0 && <div style={{ width: `${p1}%` }} className="bg-red-500 h-full transition-all duration-500"></div>}
+                        </>
+                    )}
+                    
+                    <div className="absolute inset-0 flex items-center justify-between px-4">
+                        <div className="flex flex-col z-10 truncate pr-4">
+                            <span className={`font-bold truncate text-base ${isEmpty ? 'text-gray-500' : 'text-white battery-text'}`}>{title}</span>
+                            {subtitle && <span className={`text-xs truncate ${isEmpty ? 'text-gray-400' : 'text-gray-100 battery-text opacity-90'}`}>{subtitle}</span>}
+                        </div>
+                        <div className="shrink-0 flex items-center gap-2">
+                            {isEmpty ? (
+                                <span className="text-gray-400 text-sm font-bold">0 úloh</span>
+                            ) : (
+                                <div className="flex gap-2 text-white battery-text text-sm font-bold bg-black/20 px-2 py-1 rounded-md backdrop-blur-sm">
+                                    {c3 > 0 && <span className="text-green-300">{c3}</span>}
+                                    {c2 > 0 && <span className="text-orange-300">{c2 > 0 && c3 > 0 ? `/ ${c2}` : c2}</span>}
+                                    {c1 > 0 && <span className="text-red-300">{(c2 > 0 || c3 > 0) && c1 > 0 ? `/ ${c1}` : c1}</span>}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
         // --- EXPORT KOMPONENTY (TLAČ) ---
         const ExportTasks = ({ tasks, globalUsers }) => (
             <table className="w-full text-left border-collapse text-sm mb-10">
@@ -249,7 +301,6 @@
                     <div className="flex border-b-2 border-gray-400 pb-2 mb-4 relative z-20 bg-white/80">
                         <div className="w-1/4 font-bold text-gray-800 text-sm">Názov úlohy</div>
                         <div className="w-3/4 relative h-6 border-l-2 border-gray-400">
-                            {/* Týždňové štítky v hlavičke */}
                             {weeks.map(w => {
                                 const lp = ((w.getTime() - ganttData.minDate.getTime()) / ganttData.totalTime) * 100;
                                 return (
@@ -323,9 +374,15 @@
           // Stavy pre Dashboard filtrovanie
           const [dashboardSearch, setDashboardSearch] = useState('');
           const [dashboardSort, setDashboardSort] = useState('modified_desc');
+          
+          // Stavy pre Dashboard PREHĽAD (Nové)
+          const [overviewStartDate, setOverviewStartDate] = useState('');
+          const [overviewEndDate, setOverviewEndDate] = useState('');
+          const [overviewUserId, setOverviewUserId] = useState('');
 
           const [activeTab, setActiveTab] = useState('harmonogram');
-          const [dashboardTab, setDashboardTab] = useState('projects');
+          // PRIDANÝ DEFAULT TAB 'overview' PRE PREHĽAD
+          const [dashboardTab, setDashboardTab] = useState('overview');
 
           const [draggedTaskIndex, setDraggedTaskIndex] = useState(null);
 
@@ -396,18 +453,13 @@
           // --- NATÍVNA TLAČ S BEZPEČNOSTNÝM ONESKORENÍM PRE SAFARI ---
           const handlePrintReport = () => {
             document.body.classList.remove('printing-gantt');
-            // Mierne oneskorenie, aby Safari stihlo aplikovať štýly
-            setTimeout(() => {
-                window.print();
-            }, 150);
+            setTimeout(() => { window.print(); }, 150);
           };
 
           const handlePrintGantt = () => {
             document.body.classList.add('printing-gantt');
-            // Pre iPad Safari - musíme počkať pred zablokovaním vlákna cez print()
             setTimeout(() => {
                 window.print();
-                // Fallback poistka pre prehliadače, ktoré nepodporujú afterprint ideálne
                 setTimeout(() => { document.body.classList.remove('printing-gantt'); }, 1000);
             }, 150);
           };
@@ -489,7 +541,8 @@
             );
           }
 
-          if (!isAdmin && dashboardTab === 'users') setDashboardTab('projects');
+          // Ak admin stratí práva a je na users tabe, vráti sa na projects (overview)
+          if (!isAdmin && dashboardTab === 'users') setDashboardTab('overview');
 
           const projects = appState.projects || [];
           const departments = appState.departments || [];
@@ -571,7 +624,7 @@
              setShowAccessModal(null);
           };
 
-          // FUNKCIA PRE MANUÁLNE POSUNUTIE ÚLOHY NAHRÁDZAJÚCA CHYBOVÝ DRAG/DROP
+          // FUNKCIA PRE MANUÁLNE POSUNUTIE ÚLOHY NAHRÁDZAJÚCA CHYBOVÝ DRAG/DROP v Safari
           const moveTask = (index, direction) => {
              if (index + direction < 0 || index + direction >= (currentProject.tasks||[]).length) return;
              updateCurrentProject(p => {
@@ -584,11 +637,11 @@
           };
 
           // ======================================================================
-          // --- VYKRESLENIE HLAVNEJ OBRAZOVKY (DASHBOARD) S FILTROVANÍM ---
+          // --- VYKRESLENIE HLAVNEJ OBRAZOVKY (DASHBOARD) ---
           // ======================================================================
           if (!activeProjectId) {
             
-            // 1. Získať prístupné projekty
+            // 1. Získať prístupné projekty (Bez šablón)
             let accessibleProjects = projects.filter(p => {
               if (p.isTemplate) return false;
               if (isAdmin) return true;
@@ -600,7 +653,7 @@
                 accessibleProjects = accessibleProjects.filter(p => p.name.toLowerCase().includes(dashboardSearch.toLowerCase()));
             }
 
-            // 3. Zoradenie
+            // 3. Zoradenie (Aplikuje sa pre záložku Projekty)
             accessibleProjects.sort((a, b) => {
                 if (dashboardSort === 'alpha_asc') return a.name.localeCompare(b.name);
                 if (dashboardSort === 'created_desc') return (b.createdAt || parseInt(b.id)) - (a.createdAt || parseInt(a.id));
@@ -608,11 +661,25 @@
                 return (b.lastModifiedTs || parseInt(b.id)) - (a.lastModifiedTs || parseInt(a.id));
             });
 
-            // 4. Rozdelenie podľa stavu
             const activeProjects = accessibleProjects.filter(p => p.projectStatus !== 'completed');
             const completedProjects = accessibleProjects.filter(p => p.projectStatus === 'completed');
-            
             const myTemplates = projects.filter(p => p.isTemplate);
+
+            // --- VÝPOČTY PRE PREHĽAD (DASHBOARD TAB OVERVIEW) ---
+            let overviewProjectsFiltered = [...accessibleProjects];
+            if (overviewStartDate || overviewEndDate) {
+                const startTs = overviewStartDate ? new Date(overviewStartDate).getTime() : 0;
+                const endTs = overviewEndDate ? new Date(overviewEndDate).getTime() : Infinity;
+                
+                overviewProjectsFiltered = overviewProjectsFiltered.filter(p => {
+                    const pTs = p.startDate ? new Date(p.startDate).getTime() : (p.createdAt || parseInt(p.id));
+                    return pTs >= startTs && pTs <= endTs;
+                });
+            }
+
+            const ovActiveCount = overviewProjectsFiltered.filter(p => p.projectStatus !== 'completed').length;
+            const ovCompletedCount = overviewProjectsFiltered.filter(p => p.projectStatus === 'completed').length;
+            const ovMaxCount = Math.max(ovActiveCount, ovCompletedCount, 1);
 
             return (
               <div className="min-h-screen bg-gray-50 p-8 font-sans relative flex flex-col">
@@ -742,7 +809,8 @@
                       <img src={LOGO_URL} alt="Logo spoločnosti" className="h-10 object-contain self-start rounded" />
                       <div>
                         <h1 className="text-3xl font-bold text-gray-800 flex items-center gap-3">
-                          Projektové centrum <span className="text-sm font-normal text-green-700 bg-green-100 px-2 py-0.5 rounded-full flex items-center gap-1"><Icon name="cloud" size={14}/> Online</span>
+                          Projektové centrum 
+                          <span className="text-sm font-normal text-green-700 bg-green-100 px-2 py-0.5 rounded-full flex items-center gap-1"><Icon name="cloud" size={14}/> Online</span>
                         </h1>
                         <p className="text-gray-500 mt-1">Zdieľané a zabezpečené pracovné prostredie.</p>
                       </div>
@@ -763,13 +831,142 @@
                     </div>
                   </header>
 
-                  {isAdmin && (
-                    <div className="flex space-x-6 mb-6 border-b border-gray-200">
-                      <button onClick={() => setDashboardTab('projects')} className={`pb-3 text-lg font-medium transition-colors ${dashboardTab === 'projects' ? 'border-b-2 border-blue-600 text-blue-700' : 'text-gray-500 hover:text-gray-800'}`}>Projekty a Šablóny</button>
-                      <button onClick={() => setDashboardTab('users')} className={`pb-3 text-lg font-medium transition-colors ${dashboardTab === 'users' ? 'border-b-2 border-blue-600 text-blue-700' : 'text-gray-500 hover:text-gray-800'}`}>Centrálni používatelia a Oprávnenia</button>
+                  {/* ZÁLOŽKY HLAVNEJ OBRAZOVKY */}
+                  <div className="flex space-x-6 mb-8 border-b border-gray-200">
+                    <button onClick={() => setDashboardTab('overview')} className={`pb-3 text-lg font-medium transition-colors ${dashboardTab === 'overview' ? 'border-b-2 border-blue-600 text-blue-700' : 'text-gray-500 hover:text-gray-800'}`}>
+                      <Icon name="chart-pie" className="mr-2"/> Prehľad (Dashboard)
+                    </button>
+                    <button onClick={() => setDashboardTab('projects')} className={`pb-3 text-lg font-medium transition-colors ${dashboardTab === 'projects' ? 'border-b-2 border-blue-600 text-blue-700' : 'text-gray-500 hover:text-gray-800'}`}>
+                      <Icon name="folder-tree" className="mr-2"/> Projekty a Šablóny
+                    </button>
+                    {isAdmin && (
+                      <button onClick={() => setDashboardTab('users')} className={`pb-3 text-lg font-medium transition-colors ${dashboardTab === 'users' ? 'border-b-2 border-blue-600 text-blue-700' : 'text-gray-500 hover:text-gray-800'}`}>
+                        <Icon name="users-gear" className="mr-2"/> Používatelia a Oprávnenia
+                      </button>
+                    )}
+                  </div>
+
+                  {/* --- TAB: PREHĽAD (DASHBOARD) --- */}
+                  {dashboardTab === 'overview' && (
+                    <div className="space-y-8">
+                        
+                        {/* Filter obdobia */}
+                        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
+                            <Icon name="calendar-day" className="text-gray-400" size={20}/>
+                            <div>
+                                <span className="text-xs text-gray-500 font-bold uppercase tracking-wider block mb-1">Filter obdobia (Pre grafy)</span>
+                                <div className="flex items-center gap-2">
+                                    <input type="date" value={overviewStartDate} onChange={e => setOverviewStartDate(e.target.value)} className="p-1 border border-gray-300 rounded text-sm outline-none focus:border-blue-500" />
+                                    <span className="text-gray-400">-</span>
+                                    <input type="date" value={overviewEndDate} onChange={e => setOverviewEndDate(e.target.value)} className="p-1 border border-gray-300 rounded text-sm outline-none focus:border-blue-500" />
+                                    {(overviewStartDate || overviewEndDate) && (
+                                        <button onClick={() => {setOverviewStartDate(''); setOverviewEndDate('');}} className="text-gray-400 hover:text-red-500 text-xs ml-2 underline">Zrušiť filter</button>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                            
+                            {/* GRAF 1: Stĺpcový graf projektov */}
+                            <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex flex-col">
+                                <h2 className="text-lg font-bold text-gray-800 mb-6 flex items-center gap-2"><Icon name="chart-column" className="text-blue-500"/> Graf projektov</h2>
+                                
+                                <div className="flex-1 flex items-end justify-around px-8 pb-4 border-b border-gray-200 min-h-[200px] relative">
+                                    {/* Pozadie mriežky */}
+                                    <div className="absolute inset-0 flex flex-col justify-between pointer-events-none opacity-10">
+                                        <div className="border-b border-black w-full h-0"></div>
+                                        <div className="border-b border-black w-full h-0"></div>
+                                        <div className="border-b border-black w-full h-0"></div>
+                                        <div className="border-b border-black w-full h-0"></div>
+                                    </div>
+                                    
+                                    {/* Stĺpec V riešení */}
+                                    <div className="flex flex-col items-center w-24 group">
+                                        <span className="text-gray-600 font-bold mb-2">{ovActiveCount}</span>
+                                        <div className="w-full bg-orange-400 rounded-t shadow-sm transition-all duration-500 group-hover:bg-orange-500" style={{ height: `${(ovActiveCount/ovMaxCount)*100}%`, minHeight: '4px' }}></div>
+                                        <span className="text-xs text-gray-500 mt-3 font-medium">V riešení</span>
+                                    </div>
+                                    
+                                    {/* Stĺpec Vyriešené */}
+                                    <div className="flex flex-col items-center w-24 group">
+                                        <span className="text-gray-600 font-bold mb-2">{ovCompletedCount}</span>
+                                        <div className="w-full bg-green-500 rounded-t shadow-sm transition-all duration-500 group-hover:bg-green-600" style={{ height: `${(ovCompletedCount/ovMaxCount)*100}%`, minHeight: '4px' }}></div>
+                                        <span className="text-xs text-gray-500 mt-3 font-medium">Vyriešené</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* GRAF 2: Úlohy podľa osoby */}
+                            <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex flex-col">
+                                <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2"><Icon name="user-check" className="text-purple-500"/> Graf úloh (podľa osoby)</h2>
+                                <p className="text-xs text-gray-500 mb-4">Vyberte zamestnanca pre zobrazenie stavu všetkých jeho pridelených úloh (zo všetkých projektov).</p>
+                                
+                                <div className="mb-6 border border-gray-300 rounded-lg p-2 bg-gray-50">
+                                    <UserSelect value={overviewUserId} onChange={setOverviewUserId} users={globalUsers} departments={departments} />
+                                </div>
+
+                                <div className="flex-1 flex items-center">
+                                    {overviewUserId ? (() => {
+                                        // Zozbieranie úloh
+                                        let userTasks = [];
+                                        accessibleProjects.forEach(p => {
+                                            (p.tasks || []).forEach(t => {
+                                                const assignedArr = Array.isArray(t.assignedTo) ? t.assignedTo : (t.assignedTo ? [t.assignedTo] : []);
+                                                if (assignedArr.includes(overviewUserId)) {
+                                                    userTasks.push({ ...t, projectName: p.name });
+                                                }
+                                            });
+                                        });
+
+                                        const selectedUser = globalUsers.find(u => u.id === overviewUserId);
+
+                                        return (
+                                            <div className="w-full">
+                                                <BatteryChart 
+                                                    title={`Úlohy: ${selectedUser?.name}`} 
+                                                    subtitle={selectedUser?.position || ''}
+                                                    tasks={userTasks} 
+                                                />
+                                                <div className="flex justify-between text-xs text-gray-500 mt-3 px-1">
+                                                    <span><span className="inline-block w-2 h-2 bg-green-500 rounded-full mr-1"></span> Vyriešené</span>
+                                                    <span><span className="inline-block w-2 h-2 bg-orange-400 rounded-full mr-1"></span> V riešení</span>
+                                                    <span><span className="inline-block w-2 h-2 bg-red-500 rounded-full mr-1"></span> Nevyriešené</span>
+                                                </div>
+                                            </div>
+                                        );
+                                    })() : (
+                                        <div className="text-gray-400 italic text-center w-full">Zvoľte osobu z roletky vyššie.</div>
+                                    )}
+                                </div>
+                            </div>
+
+                        </div>
+
+                        {/* GRAF 3: Baterky projektov */}
+                        <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                            <h2 className="text-lg font-bold text-gray-800 mb-6 flex items-center gap-2"><Icon name="battery-three-quarters" className="text-gray-600"/> Stav projektov (Baterkový graf)</h2>
+                            
+                            <div className="space-y-4">
+                                {overviewProjectsFiltered.length === 0 ? (
+                                    <p className="text-gray-500 italic">V tomto období sa nenašli žiadne projekty.</p>
+                                ) : (
+                                    overviewProjectsFiltered.map(proj => (
+                                        <BatteryChart 
+                                            key={proj.id} 
+                                            title={proj.name} 
+                                            subtitle={proj.startDate && proj.endDate ? `${new Date(proj.startDate).toLocaleDateString('sk-SK')} - ${new Date(proj.endDate).toLocaleDateString('sk-SK')}` : ''}
+                                            tasks={proj.tasks || []} 
+                                        />
+                                    ))
+                                )}
+                            </div>
+                        </div>
+
                     </div>
                   )}
 
+                  {/* --- TAB: PROJEKTY A ŠABLÓNY --- */}
                   {dashboardTab === 'projects' && (
                     <>
                       {/* FILTER A ZORADENIE */}
@@ -791,10 +988,10 @@
 
                       {/* AKTÍVNE PROJEKTY */}
                       <section className="mb-10">
-                        <h2 className="text-xl font-semibold text-gray-800 mb-4 flex items-center gap-2"><Icon name="folder-open" className="text-blue-500" /> Projekty v riešení ({activeProjects.length})</h2>
+                        <h2 className="text-xl font-semibold text-gray-800 mb-4 flex items-center gap-2"><Icon name="folder-open" className="text-orange-500" /> Projekty v riešení ({activeProjects.length})</h2>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                           {activeProjects.map(proj => (
-                            <div key={proj.id} className="bg-white p-5 rounded-xl border-l-4 border-blue-500 border-y border-r border-gray-200 shadow-sm hover:shadow-md transition-shadow relative group cursor-pointer" onClick={() => setActiveProjectId(proj.id)}>
+                            <div key={proj.id} className="bg-white p-5 rounded-xl border-l-4 border-orange-400 border-y border-r border-gray-200 shadow-sm hover:shadow-md transition-shadow relative group cursor-pointer" onClick={() => setActiveProjectId(proj.id)}>
                               <h3 className="font-semibold text-lg text-gray-800 mb-2 truncate pr-14" title={proj.name}>{proj.name}</h3>
                               <div className="text-sm text-gray-500 mb-4">
                                 <p>Úlohy: {(proj.tasks||[]).length} | Majetok: {(proj.assets||[]).length}</p>
@@ -852,9 +1049,16 @@
                               <div key={tpl.id} className="bg-white p-5 rounded-xl border border-purple-200 shadow-sm hover:shadow-md transition-shadow relative group">
                                 <div className="flex justify-between items-start mb-2">
                                   <h3 className="font-semibold text-lg text-purple-800 cursor-pointer hover:underline truncate" onClick={() => setActiveProjectId(tpl.id)} title={tpl.name}>{tpl.name}</h3>
-                                  {isAdmin && <button onClick={() => deleteProject(tpl.id)} className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity" title="Zmazať šablónu"><Icon name="trash-can" size={18} /></button>}
+                                  {isAdmin && (
+                                    <button onClick={() => deleteProject(tpl.id)} className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity" title="Zmazať šablónu">
+                                      <Icon name="trash-can" size={18} />
+                                    </button>
+                                  )}
                                 </div>
-                                <div className="text-sm text-gray-500 mb-4"><p>Preddefinovaných úloh: {(tpl.tasks||[]).length}</p><p>Naposledy upravené: {tpl.lastModified}</p></div>
+                                <div className="text-sm text-gray-500 mb-4">
+                                  <p>Preddefinovaných úloh: {(tpl.tasks||[]).length}</p>
+                                  <p>Naposledy upravené: {tpl.lastModified}</p>
+                                </div>
                                 <button onClick={() => createFromTemplate(tpl)} className="w-full flex items-center justify-center gap-2 py-2 bg-purple-50 text-purple-700 rounded-lg text-sm font-medium hover:bg-purple-100 transition-colors">
                                   <Icon name="copy" size={16} /> Vytvoriť projekt zo šablóny
                                 </button>
@@ -866,6 +1070,7 @@
                     </>
                   )}
 
+                  {/* --- TAB: UŽÍVATELIA A OPRÁVNENIA --- */}
                   {isAdmin && dashboardTab === 'users' && (
                     <div className="space-y-8">
                       <section className="bg-white p-6 rounded-xl border border-blue-200 shadow-sm">
@@ -873,7 +1078,9 @@
                         <p className="text-sm text-gray-600 mb-6">Ak chcete niekomu umožniť editovať šablóny, udeľovať práva projektom a mazať ich, požiadajte ho o jeho <b className="text-gray-800">UID kód</b> z dolnej lišty. Prihlasovací e-mail na status Admina nestačí.</p>
                         <div className="flex gap-2 mb-6">
                           <input value={newAdminUid} onChange={e => setNewAdminUid(e.target.value)} placeholder="Vložte sem UID kód (napr. aB3xY...)" className="border border-gray-300 p-2 rounded-md w-80 focus:ring-1 focus:ring-blue-500 outline-none" />
-                          <button onClick={() => { if(newAdminUid.trim().length > 5) { updateCloudState({ admins: [...new Set([...appState.admins, newAdminUid.trim()])] }); setNewAdminUid(''); } }} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors">Pridať administrátora</button>
+                          <button onClick={() => { if(newAdminUid.trim().length > 5) { updateCloudState({ admins: [...new Set([...appState.admins, newAdminUid.trim()])] }); setNewAdminUid(''); } }} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors">
+                            Pridať administrátora
+                          </button>
                         </div>
                         <div>
                           <h3 className="text-sm font-semibold text-gray-500 mb-2 uppercase tracking-wider">Povolení administrátori (Zoznam UID kódov)</h3>
@@ -881,7 +1088,9 @@
                             {appState.admins.map(adminId => (
                                <li key={adminId} className="flex items-center justify-between bg-gray-50 px-4 py-2 rounded-md w-96 border border-gray-200">
                                  <span className="font-mono text-sm text-gray-700">{adminId} {adminId === user?.uid ? <span className="text-blue-600 font-bold ml-1">(Váš účet)</span> : ''}</span>
-                                 {appState.admins.length > 1 && <button onClick={() => { if(confirm('Odobrať admin práva?')) updateCloudState({ admins: appState.admins.filter(id => id !== adminId) }); }} className="text-gray-400 hover:text-red-500"><Icon name="trash-can" size={16}/></button>}
+                                 {appState.admins.length > 1 && (
+                                   <button onClick={() => { if(confirm('Odobrať admin práva?')) updateCloudState({ admins: appState.admins.filter(id => id !== adminId) }); }} className="text-gray-400 hover:text-red-500"><Icon name="trash-can" size={16}/></button>
+                                 )}
                                </li>
                             ))}
                           </ul>
@@ -892,7 +1101,7 @@
                         <div className="flex justify-between items-center mb-6">
                           <div>
                             <h2 className="text-xl font-semibold text-gray-800 flex items-center gap-2"><Icon name="users" size={20}/> Štruktúra zamestnancov a Oprávnenia prístupu</h2>
-                            <p className="text-sm text-gray-500 mt-1">Tieto mená sa budú dať vyberať v roletkách a môžete im prideliť prístup do konkrétneho projektu.</p>
+                            <p className="text-sm text-gray-500 mt-1">Tieto mená sa budú dať vyberať v roletkách a môžete im prideliť prístup do konkrétneho projektu. <b>Zadaný E-mail slúži ako POZVÁNKA do celej aplikácie.</b></p>
                           </div>
                           <button onClick={() => updateCloudState({ departments: [...departments, { id: Date.now().toString(), prefix: '', name: '' }] })} className="flex items-center gap-1 px-4 py-2 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-md text-sm font-medium transition-colors">
                             <Icon name="plus" size={16} /> Pridať oddelenie
@@ -905,7 +1114,7 @@
                               <div className="bg-gray-100 p-3 flex items-center gap-3 border-b border-gray-200">
                                 <input value={dept.prefix} onChange={e => updateCloudState({ departments: departments.map(d => d.id === dept.id ? { ...d, prefix: e.target.value } : d) })} className="w-16 p-1.5 rounded border border-gray-300 font-bold outline-none focus:border-blue-500" placeholder="1." />
                                 <input value={dept.name} onChange={e => updateCloudState({ departments: departments.map(d => d.id === dept.id ? { ...d, name: e.target.value } : d) })} className="flex-1 p-1.5 rounded border border-gray-300 font-bold outline-none focus:border-blue-500" placeholder="Názov oddelenia" />
-                                <button onClick={() => { if (confirm('Zmazať oddelenie?')) updateCloudState({ departments: departments.filter(d => d.id !== dept.id), globalUsers: globalUsers.filter(u => u.deptId !== dept.id) }); }} className="text-gray-400 hover:text-red-500 p-2 bg-white rounded shadow-sm"><Icon name="trash-can" size={16} /></button>
+                                <button onClick={() => { if (confirm('Zmazať oddelenie aj ľudí v ňom? Všetci v oddelení stratia prístup.')) updateCloudState({ departments: departments.filter(d => d.id !== dept.id), globalUsers: globalUsers.filter(u => u.deptId !== dept.id) }); }} className="text-gray-400 hover:text-red-500 p-2 bg-white rounded shadow-sm"><Icon name="trash-can" size={16} /></button>
                               </div>
                               <div className="p-0 bg-white">
                                 <table className="w-full text-left">
@@ -924,10 +1133,10 @@
                                       <tr key={u.id} className="hover:bg-gray-50 transition-colors group">
                                         <td className="p-2 pl-4 border-r border-gray-50"><input value={u.prefix} onChange={e => updateCloudState({ globalUsers: globalUsers.map(usr => usr.id === u.id ? { ...usr, prefix: e.target.value } : usr) })} className="w-full p-1.5 border border-transparent hover:border-gray-300 focus:bg-white focus:border-blue-500 outline-none rounded" placeholder="1.1." /></td>
                                         <td className="p-2 border-r border-gray-50"><input value={u.name} onChange={e => updateCloudState({ globalUsers: globalUsers.map(usr => usr.id === u.id ? { ...usr, name: e.target.value } : usr) })} className="w-full p-1.5 border border-transparent hover:border-gray-300 focus:bg-white focus:border-blue-500 outline-none rounded" placeholder="Meno a priezvisko" /></td>
-                                        <td className="p-2 border-r border-gray-50"><input value={u.email} onChange={e => updateCloudState({ globalUsers: globalUsers.map(usr => usr.id === u.id ? { ...usr, email: e.target.value } : usr) })} type="email" className="w-full p-1.5 border border-transparent hover:border-gray-300 focus:bg-white focus:border-blue-500 outline-none rounded" placeholder="Prístupový E-mail" /></td>
+                                        <td className="p-2 border-r border-gray-50"><input value={u.email} onChange={e => updateCloudState({ globalUsers: globalUsers.map(usr => usr.id === u.id ? { ...usr, email: e.target.value } : usr) })} type="email" className="w-full p-1.5 border border-transparent hover:border-gray-300 focus:bg-white focus:border-blue-500 outline-none rounded" placeholder="Prístupový Google E-mail" /></td>
                                         <td className="p-2 border-r border-gray-50"><input value={u.position || ''} onChange={e => updateCloudState({ globalUsers: globalUsers.map(usr => usr.id === u.id ? { ...usr, position: e.target.value } : usr) })} className="w-full p-1.5 border border-transparent hover:border-gray-300 focus:bg-white focus:border-blue-500 outline-none rounded" placeholder="Napr. Technik" /></td>
                                         <td className="p-2 flex items-center gap-2 text-sm text-gray-600"><Icon name="bell" size={14} className="text-gray-400"/><input type="number" value={u.notifyDays} onChange={e => updateCloudState({ globalUsers: globalUsers.map(usr => usr.id === u.id ? { ...usr, notifyDays: e.target.value } : usr) })} className="w-14 p-1.5 border border-transparent hover:border-gray-300 focus:bg-white focus:border-blue-500 outline-none rounded text-center" min="0" /> dní</td>
-                                        <td className="p-2 text-center pr-4"><button onClick={() => { if(confirm('Odstrániť používateľa?')) updateCloudState({ globalUsers: globalUsers.filter(usr => usr.id !== u.id) })}} className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 p-1"><Icon name="trash-can" size={16}/></button></td>
+                                        <td className="p-2 text-center pr-4"><button onClick={() => { if(confirm('Odstrániť používateľa? Stratí tým prístup na stránku.')) updateCloudState({ globalUsers: globalUsers.filter(usr => usr.id !== u.id) })}} className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 p-1"><Icon name="trash-can" size={16}/></button></td>
                                       </tr>
                                     ))}
                                   </tbody>
@@ -944,13 +1153,14 @@
                   )}
                 </div>
 
+                {/* SPODNÁ LIŠTA */}
                 <div className="fixed bottom-0 left-0 w-full bg-gray-900 text-white p-2 px-6 text-xs flex justify-between items-center z-40 print:hidden shadow-lg">
                    <div className="flex items-center gap-4">
                      <span className="flex items-center gap-2">
                        <img src={user?.photoURL || 'https://via.placeholder.com/30'} alt="Avatar" className="w-6 h-6 rounded-full border border-gray-600"/>
                        <span>{user?.displayName} ({user?.email})</span>
                      </span>
-                     <span className="border-l border-gray-700 pl-4">Práva: <span className={isAdmin ? 'text-green-400 font-bold' : 'text-blue-300 font-bold'}>{isAdmin ? 'Administrátor (Plný prístup)' : 'Člen rozjazdového tímu (Iba určené projekty)'}</span></span>
+                     <span className="border-l border-gray-700 pl-4">Práva: <span className={isAdmin ? 'text-green-400 font-bold' : 'text-blue-300 font-bold'}>{isAdmin ? 'Administrátor (Plný prístup)' : 'Člen rozjazdového tímu'}</span></span>
                    </div>
                    <div className="flex items-center gap-4">
                      {isAdmin && <div className="text-gray-400 border-r border-gray-700 pr-4 mr-1">{APP_VERSION}</div>}
@@ -962,11 +1172,13 @@
             );
           }
 
+          // BEZPEČNOSTNÁ POISTKA PROTI BIELEJ OBRAZOVKE 
           if (activeProjectId && !currentProject) {
             return (
               <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6 text-center">
                 <Icon name="triangle-exclamation" size={48} className="text-yellow-500 mb-4" />
                 <h2 className="text-xl font-bold text-gray-800 mb-2">Projekt sa nenašiel</h2>
+                <p className="text-gray-600 mb-6">Tento projekt bol pravdepodobne vymazaný iným administrátorom.</p>
                 <button onClick={() => setActiveProjectId(null)} className="px-6 py-2 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700">Späť na prehľad</button>
               </div>
             );
@@ -979,6 +1191,7 @@
           const assets = currentProject.assets || [];
           const contacts = currentProject.contacts || [];
 
+          // Bezpečná kalkulácia Ganttovho diagramu
           let ganttData = null;
           const validTasks = tasks.filter(t => {
             if (!t.startDate || !t.deadline) return false;
@@ -1082,7 +1295,7 @@
                         <select 
                           value={currentProject.projectStatus || 'active'} 
                           onChange={(e) => updateCurrentProject(p => ({...p, projectStatus: e.target.value}))} 
-                          className={`text-xs font-bold rounded-full px-2 py-0.5 outline-none border border-transparent hover:border-gray-300 cursor-pointer ${currentProject.projectStatus === 'completed' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}`}
+                          className={`text-xs font-bold rounded-full px-2 py-0.5 outline-none border border-transparent hover:border-gray-300 cursor-pointer ${currentProject.projectStatus === 'completed' ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'}`}
                         >
                           <option value="active">Stav: V riešení</option>
                           <option value="completed">Stav: Vyriešené</option>
@@ -1146,7 +1359,7 @@
                               <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-64">Názov úlohy</th>
                               <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-32">Začiatok</th>
                               <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-32">Termín</th>
-                              {/* ZODPOVEDNÁ OSOBA -> MULTI SELECT */}
+                              {/* ZODPOVEDNÁ OSOBA -> MULTI SELECT so SEARCOM */}
                               <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-48">Zodpovednosť</th>
                               <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-36">Stav</th>
                               <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-48">Poznámka</th>
@@ -1166,7 +1379,6 @@
                               <tr key={task.id} className={`hover:bg-blue-50/30 transition-colors group ${draggedTaskIndex === index ? 'opacity-50 bg-blue-100' : ''}`} 
                                 draggable 
                                 onDragStart={(e) => {
-                                  // Tento malý riadok je potrebný, aby Drag and Drop fungoval aj vo Firefoxe a na iPadoch
                                   if(e.dataTransfer) { e.dataTransfer.setData('text/plain', index.toString()); e.dataTransfer.effectAllowed = 'move'; }
                                   setDraggedTaskIndex(index);
                                 }} 
@@ -1182,21 +1394,18 @@
                                   });
                                   setDraggedTaskIndex(null);
                               }}>
-                                {/* PRIDANÉ ŠÍPKY PRE POSUN HORE DOLE (Oveľa lepšie pre tablety!) */}
                                 <td className={`p-1 border-r border-r-gray-100 text-center align-middle ${tdBorder}`}>
                                   <div className="flex flex-col items-center justify-center">
                                     <button onClick={(e) => { 
                                         e.stopPropagation();
-                                        if (index === 0) return;
-                                        updateCurrentProject(p => { const newTasks = [...p.tasks]; const t = newTasks[index]; newTasks[index] = newTasks[index-1]; newTasks[index-1] = t; return {...p, tasks: newTasks}; });
+                                        moveTask(index, -1);
                                     }} disabled={index === 0} className="text-gray-400 hover:text-blue-600 disabled:opacity-20 p-0.5"><Icon name="chevron-up" size={10} /></button>
                                     
                                     <Icon name="grip-vertical" size={14} className="text-gray-300 my-0.5 cursor-grab" />
                                     
                                     <button onClick={(e) => { 
                                         e.stopPropagation();
-                                        if (index === tasks.length - 1) return;
-                                        updateCurrentProject(p => { const newTasks = [...p.tasks]; const t = newTasks[index]; newTasks[index] = newTasks[index+1]; newTasks[index+1] = t; return {...p, tasks: newTasks}; });
+                                        moveTask(index, 1);
                                     }} disabled={index === tasks.length - 1} className="text-gray-400 hover:text-blue-600 disabled:opacity-20 p-0.5"><Icon name="chevron-down" size={10} /></button>
                                   </div>
                                 </td>
@@ -1214,7 +1423,7 @@
                                 <td className={`p-2 border-r border-r-gray-100 ${tdBorder} align-top`}><StatusSelect value={task.status} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, status: v} : t)}))} /></td>
                                 <td className={`p-2 border-r border-r-gray-100 ${tdBorder} align-top`}><InputCell value={task.notes} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, notes: v} : t)}))} placeholder="Poznámka..." /></td>
                                 
-                                {/* ODKAZ PRESUNUTÝ SEM */}
+                                {/* ODKAZ */}
                                 <td className={`p-2 border-r border-r-gray-100 ${tdBorder} align-top`}>
                                   <div className="flex items-center gap-1">
                                     <InputCell value={task.link} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, link: v} : t)}))} placeholder="https://..." />

@@ -60,7 +60,7 @@
         const { useState, useEffect, useMemo } = React;
 
         // --- VERZIA APLIKÁCIE ---
-        const APP_VERSION = "Verzia: 14.03.2026, 15:30 (Viac osôb + Týždňový Gantt + Interval)";
+        const APP_VERSION = "Verzia: 15.03.2026, 16:00 (Tím v harmonograme, Pozície, Plný kód)";
 
         // ==========================================
         // VÁŠ FIREBASE KĽÚČ
@@ -100,11 +100,10 @@
           </select>
         );
 
-        // --- NOVÝ KOMPONENT: Výber viacerých osôb v tabuľke ---
+        // --- KOMPONENT: Výber viacerých osôb v tabuľke ---
         const MultiUserSelect = ({ value, onChange, users, departments }) => {
             const [open, setOpen] = useState(false);
             
-            // Ochrana pred staršími dátami (ak bola niekedy priradená iba 1 osoba ako text, premeníme ju na pole)
             const valArray = Array.isArray(value) ? value : (value ? [value] : []);
             
             const selectedNames = valArray.map(id => {
@@ -118,7 +117,6 @@
                         {selectedNames || <span className="text-gray-400 italic">-- Nepriradené --</span>}
                     </div>
                     
-                    {/* Kliknutie mimo zatvorí okno */}
                     {open && <div className="fixed inset-0 z-40" onClick={() => setOpen(false)}></div>}
                     
                     {open && (
@@ -142,7 +140,10 @@
                                                         }} 
                                                         className="rounded text-blue-600 w-4 h-4"
                                                     />
-                                                    <span className="text-sm text-gray-700">{u.prefix} {u.name}</span>
+                                                    <span className="text-sm text-gray-700 flex flex-col">
+                                                        <span>{u.prefix} {u.name}</span>
+                                                        {u.position && <span className="text-[10px] text-gray-400 leading-none">{u.position}</span>}
+                                                    </span>
                                                 </label>
                                             );
                                         })}
@@ -177,7 +178,6 @@
                 <tbody className="divide-y divide-gray-200">
                     {tasks.map(task => {
                         const statusLabel = STATUS_OPTIONS.find(o => o.value === task.status)?.label || '-';
-                        // Zlúčenie viacerých mien pre export
                         const valArray = Array.isArray(task.assignedTo) ? task.assignedTo : (task.assignedTo ? [task.assignedTo] : []);
                         const userName = valArray.map(id => globalUsers.find(u => u.id === id)?.name).filter(Boolean).join(', ') || '-';
                         
@@ -203,20 +203,16 @@
             </table>
         );
 
-        // --- GANTT RENDERER S TÝŽDŇOVOU MRIEŽKOU ---
         const ExportGantt = ({ ganttData }) => {
             if (!ganttData) return <div className="text-center text-gray-500 py-10 italic">Pre zobrazenie diagramu musia mať úlohy vyplnený Začiatok aj Termín.</div>;
             
-            // Generovanie týždňov (Pondelky)
             const weeks = [];
             let currDate = new Date(ganttData.minDate);
-            // Nájsť prvý pondelok po alebo presne v minDate
             let dayOfWeek = currDate.getDay();
             let diffToMonday = currDate.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
             let firstMonday = new Date(currDate.setDate(diffToMonday));
             firstMonday.setHours(0,0,0,0);
             
-            // Ak je prvý pondelok PRED minDate, posunieme sa o týždeň
             if (firstMonday < ganttData.minDate) {
                 firstMonday.setDate(firstMonday.getDate() + 7);
             }
@@ -231,7 +227,6 @@
                     <div className="flex border-b-2 border-gray-400 pb-2 mb-4 relative z-20 bg-white/80">
                         <div className="w-1/4 font-bold text-gray-800 text-sm">Názov úlohy</div>
                         <div className="w-3/4 relative h-6 border-l-2 border-gray-400">
-                            {/* Týždňové štítky v hlavičke */}
                             {weeks.map(w => {
                                 const lp = ((w.getTime() - ganttData.minDate.getTime()) / ganttData.totalTime) * 100;
                                 return (
@@ -246,7 +241,6 @@
                     </div>
                     
                     <div className="relative">
-                        {/* Zvislé čiary pre týždne (pozadie) */}
                         <div className="absolute inset-0 z-0">
                              <div className="w-1/4 h-full float-left border-r border-gray-200"></div>
                              <div className="w-3/4 h-full float-left relative">
@@ -257,7 +251,6 @@
                              </div>
                         </div>
 
-                        {/* Úlohy (V popredí) */}
                         <div className="space-y-3 relative z-10">
                             {ganttData.validTasks.map(task => {
                                 const tStart = new Date(task.startDate).getTime();
@@ -290,14 +283,15 @@
             { id: 'd2', prefix: '2.', name: 'Ostraha' }
           ],
           globalUsers: [
-            { id: 'u1', deptId: 'd1', prefix: '1.1.', name: 'Lenka A.', email: 'lenka@firma.sk', notifyDays: 3 },
-            { id: 'u2', deptId: 'd1', prefix: '1.2.', name: 'Pavel K.', email: 'pavel@firma.sk', notifyDays: 1 },
-            { id: 'u3', deptId: 'd2', prefix: '2.1.', name: 'Ján Novák (BOZP)', email: 'jan.novak@firma.sk', notifyDays: 3 },
+            { id: 'u1', deptId: 'd1', prefix: '1.1.', name: 'Lenka A.', email: 'lenka@firma.sk', position: 'HR Manažér', notifyDays: 3 },
+            { id: 'u2', deptId: 'd1', prefix: '1.2.', name: 'Pavel K.', email: 'pavel@firma.sk', position: 'Asistent', notifyDays: 1 },
+            { id: 'u3', deptId: 'd2', prefix: '2.1.', name: 'Ján Novák', email: 'jan.novak@firma.sk', position: 'Špecialista BOZP', notifyDays: 3 },
           ],
           projects: [
             {
               id: 'p1', name: 'Projekt: Rekonštrukcia pobočky', isTemplate: false, lastModified: new Date().toLocaleDateString('sk-SK'),
               startDate: '2026-02-01', endDate: '2026-05-01',
+              createdBy: 'mock_admin', createdByName: 'Prvý Administrátor',
               allowedUsers: ['u3', 'u1'],
               contacts: [{ id: 'c1', name: 'Karol Zima', position: 'Manažér pobočky', email: 'karol.zima@firma.sk', phone: '+421 900 123 456' }],
               tasks: [
@@ -315,7 +309,6 @@
           const [loading, setLoading] = useState(true);
           const [dbError, setDbError] = useState(false);
 
-          // Stav pre indikátor sťahovania PDF
           const [isExporting, setIsExporting] = useState(null);
 
           const [activeTab, setActiveTab] = useState('harmonogram');
@@ -361,7 +354,6 @@
             return () => unsubscribe();
           }, [user]);
 
-          // Prihlasovanie cez Popup
           const handleLogin = async () => {
             try {
               await signInWithPopup(auth, googleProvider);
@@ -381,7 +373,6 @@
             catch (e) { console.error("Error saving to cloud:", e); }
           };
 
-          // --- PRIAMY EXPORT DO PDF CEZ JSPDF ---
           const exportToPDF = (type) => {
             setIsExporting(type);
             
@@ -530,6 +521,8 @@
               lastModified: new Date().toLocaleDateString('sk-SK'), 
               startDate: '',
               endDate: '',
+              createdBy: user.uid,
+              createdByName: user.displayName || user.email,
               allowedUsers: finalAllowedUsers,
               contacts: [], tasks: [], assets: [] 
             };
@@ -542,6 +535,8 @@
                 newProject.name = newProjectName || `Nový projekt (z ${template.name})`;
                 newProject.isTemplate = false;
                 newProject.lastModified = new Date().toLocaleDateString('sk-SK');
+                newProject.createdBy = user.uid;
+                newProject.createdByName = user.displayName || user.email;
                 newProject.allowedUsers = finalAllowedUsers;
               }
             }
@@ -559,6 +554,8 @@
             newProject.name = `Nový projekt (z ${template.name})`;
             newProject.isTemplate = false;
             newProject.lastModified = new Date().toLocaleDateString('sk-SK');
+            newProject.createdBy = user.uid;
+            newProject.createdByName = user.displayName || user.email;
             newProject.allowedUsers = currentUserObj ? [currentUserObj.id] : [];
             
             updateCloudState({ projects: [...projects, newProject] });
@@ -632,7 +629,10 @@
                                               if (e.target.checked) setNewProjectAllowedUsers([...newProjectAllowedUsers, u.id]);
                                               else setNewProjectAllowedUsers(newProjectAllowedUsers.filter(id => id !== u.id));
                                             }} className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"/>
-                                            <span className="text-sm text-gray-800 font-medium">{u.prefix} {u.name} <span className="text-gray-400 text-xs font-normal ml-1">({u.email})</span></span>
+                                            <span className="text-sm text-gray-800 font-medium flex flex-col">
+                                                <span>{u.prefix} {u.name} <span className="text-gray-400 text-xs font-normal ml-1">({u.email})</span></span>
+                                                {u.position && <span className="text-[10px] text-gray-500 font-normal leading-none">{u.position}</span>}
+                                            </span>
                                           </label>
                                         );
                                       })}
@@ -682,7 +682,10 @@
                                           const newList = e.target.checked ? [...allowed, u.id] : allowed.filter(id => id !== u.id);
                                           setAppState(prev => ({...prev, projects: prev.projects.map(p => p.id === showAccessModal ? {...p, allowedUsers: newList} : p)}));
                                         }} className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"/>
-                                        <span className="text-sm text-gray-800 font-medium">{u.prefix} {u.name} <span className="text-gray-400 text-xs font-normal ml-1">({u.email})</span></span>
+                                        <span className="text-sm text-gray-800 font-medium flex flex-col">
+                                            <span>{u.prefix} {u.name} <span className="text-gray-400 text-xs font-normal ml-1">({u.email})</span></span>
+                                            {u.position && <span className="text-[10px] text-gray-500 font-normal leading-none">{u.position}</span>}
+                                        </span>
                                       </label>
                                     );
                                   })}
@@ -704,7 +707,7 @@
                   </div>
                 )}
 
-                <div className="max-w-6xl mx-auto flex-1 w-full pb-20">
+                <div className="max-w-7xl mx-auto flex-1 w-full pb-20">
                   <header className="mb-6 flex justify-between items-end pb-4 border-b border-gray-200">
                     <div className="flex flex-col gap-4">
                       <img src={LOGO_URL} alt="Logo spoločnosti" className="h-10 object-contain self-start rounded" />
@@ -720,7 +723,7 @@
                       {isAdmin && (
                         <button onClick={() => {
                            const newId = Date.now().toString();
-                           updateCloudState({ projects: [...projects, { id: newId, name: 'Nová šablóna', isTemplate: true, lastModified: new Date().toLocaleDateString('sk-SK'), contacts: [], tasks: [], assets: [] }] });
+                           updateCloudState({ projects: [...projects, { id: newId, name: 'Nová šablóna', isTemplate: true, lastModified: new Date().toLocaleDateString('sk-SK'), createdBy: user.uid, createdByName: user.displayName || user.email, contacts: [], tasks: [], assets: [] }] });
                            setActiveProjectId(newId);
                         }} className="flex items-center gap-2 px-4 py-2 bg-purple-50 text-purple-700 border border-purple-200 rounded-md shadow-sm text-sm font-medium hover:bg-purple-100 transition-colors">
                           <Icon name="file-lines" size={16} /> Nová šablóna
@@ -747,13 +750,15 @@
                     <>
                       <section className="mb-10">
                         <h2 className="text-xl font-semibold text-gray-700 mb-4 flex items-center gap-2"><Icon name="folder" size={20}/> Aktívne projekty ({myProjects.length})</h2>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                           {myProjects.map(proj => (
                             <div key={proj.id} className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow relative group cursor-pointer" onClick={() => setActiveProjectId(proj.id)}>
-                              <h3 className="font-semibold text-lg text-gray-800 mb-2 truncate pr-14">{proj.name}</h3>
+                              <h3 className="font-semibold text-lg text-gray-800 mb-2 truncate pr-14" title={proj.name}>{proj.name}</h3>
                               <div className="text-sm text-gray-500 mb-4">
                                 <p>Úlohy: {(proj.tasks||[]).length} | Majetok: {(proj.assets||[]).length}</p>
-                                <p>Interval: {proj.startDate ? new Date(proj.startDate).toLocaleDateString('sk-SK') : '?'} - {proj.endDate ? new Date(proj.endDate).toLocaleDateString('sk-SK') : '?'}</p>
+                                <p className="text-xs mt-1 text-gray-400">
+                                  {proj.startDate ? new Date(proj.startDate).toLocaleDateString('sk-SK') : '?'} - {proj.endDate ? new Date(proj.endDate).toLocaleDateString('sk-SK') : '?'}
+                                </p>
                               </div>
                               
                               <div className="flex -space-x-2 overflow-hidden mt-2">
@@ -784,11 +789,11 @@
                       {isAdmin && myTemplates.length > 0 && (
                         <section>
                           <h2 className="text-xl font-semibold text-gray-700 mb-4 flex items-center gap-2"><Icon name="file-lines" size={20}/> Šablóny na použitie</h2>
-                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                             {myTemplates.map(tpl => (
                               <div key={tpl.id} className="bg-white p-5 rounded-xl border border-purple-200 shadow-sm hover:shadow-md transition-shadow relative group">
                                 <div className="flex justify-between items-start mb-2">
-                                  <h3 className="font-semibold text-lg text-purple-800 cursor-pointer hover:underline truncate" onClick={() => setActiveProjectId(tpl.id)}>{tpl.name}</h3>
+                                  <h3 className="font-semibold text-lg text-purple-800 cursor-pointer hover:underline truncate" onClick={() => setActiveProjectId(tpl.id)} title={tpl.name}>{tpl.name}</h3>
                                   {isAdmin && (
                                     <button onClick={() => deleteProject(tpl.id)} className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity" title="Zmazať šablónu">
                                       <Icon name="trash-can" size={18} />
@@ -840,7 +845,7 @@
                         <div className="flex justify-between items-center mb-6">
                           <div>
                             <h2 className="text-xl font-semibold text-gray-800 flex items-center gap-2"><Icon name="users" size={20}/> Štruktúra zamestnancov a Oprávnenia prístupu</h2>
-                            <p className="text-sm text-gray-500 mt-1">Tieto mená sa budú dať vyberať v roletkách a môžete im prideliť prístup do konkrétneho projektu. <b>Zadaný E-mail zároveň slúži ako POZVÁNKA (povolenie na prihlásenie) do celej aplikácie.</b></p>
+                            <p className="text-sm text-gray-500 mt-1">Tieto mená sa budú dať vyberať v roletkách. <b>Zadaný E-mail zároveň slúži ako POZVÁNKA (povolenie na prihlásenie) do aplikácie.</b></p>
                           </div>
                           <button onClick={() => updateCloudState({ departments: [...departments, { id: Date.now().toString(), prefix: '', name: '' }] })} className="flex items-center gap-1 px-4 py-2 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-md text-sm font-medium transition-colors">
                             <Icon name="plus" size={16} /> Pridať oddelenie
@@ -849,7 +854,7 @@
                         
                         <div className="space-y-6">
                           {departments.map(dept => (
-                            <div key={dept.id} className="border border-gray-200 rounded-lg overflow-hidden">
+                            <div key={dept.id} className="border border-gray-200 rounded-lg overflow-hidden shadow-sm">
                               <div className="bg-gray-100 p-3 flex items-center gap-3 border-b border-gray-200">
                                 <input value={dept.prefix} onChange={e => updateCloudState({ departments: departments.map(d => d.id === dept.id ? { ...d, prefix: e.target.value } : d) })} className="w-16 p-1.5 rounded border border-gray-300 font-bold outline-none focus:border-blue-500" placeholder="1." />
                                 <input value={dept.name} onChange={e => updateCloudState({ departments: departments.map(d => d.id === dept.id ? { ...d, name: e.target.value } : d) })} className="flex-1 p-1.5 rounded border border-gray-300 font-bold outline-none focus:border-blue-500" placeholder="Názov oddelenia" />
@@ -857,23 +862,33 @@
                               </div>
                               <div className="p-0 bg-white">
                                 <table className="w-full text-left">
+                                  <thead className="bg-gray-50 border-b border-gray-100 text-xs text-gray-500 uppercase">
+                                    <tr>
+                                      <th className="p-2 font-medium pl-4 w-20">Por.</th>
+                                      <th className="p-2 font-medium w-1/4">Meno a priezvisko</th>
+                                      <th className="p-2 font-medium w-1/4">E-mail (Prístup)</th>
+                                      <th className="p-2 font-medium w-1/4">Pozícia</th>
+                                      <th className="p-2 font-medium w-32">Notifikácie</th>
+                                      <th className="p-2 w-10"></th>
+                                    </tr>
+                                  </thead>
                                   <tbody className="divide-y divide-gray-100">
                                     {globalUsers.filter(u => u.deptId === dept.id).map(u => (
                                       <tr key={u.id} className="hover:bg-gray-50 transition-colors group">
-                                        <td className="p-2 w-24 pl-4 border-r border-gray-50"><input value={u.prefix} onChange={e => updateCloudState({ globalUsers: globalUsers.map(usr => usr.id === u.id ? { ...usr, prefix: e.target.value } : usr) })} className="w-full p-1.5 border border-transparent hover:border-gray-300 focus:bg-white focus:border-blue-500 outline-none rounded" placeholder="1.1." /></td>
-                                        <td className="p-2 w-1/3 border-r border-gray-50"><input value={u.name} onChange={e => updateCloudState({ globalUsers: globalUsers.map(usr => usr.id === u.id ? { ...usr, name: e.target.value } : usr) })} className="w-full p-1.5 border border-transparent hover:border-gray-300 focus:bg-white focus:border-blue-500 outline-none rounded" placeholder="Meno a priezvisko" /></td>
-                                        <td className="p-2 w-1/3 border-r border-gray-50"><input value={u.email} onChange={e => updateCloudState({ globalUsers: globalUsers.map(usr => usr.id === u.id ? { ...usr, email: e.target.value } : usr) })} type="email" className="w-full p-1.5 border border-transparent hover:border-gray-300 focus:bg-white focus:border-blue-500 outline-none rounded" placeholder="Prístupový Google E-mail" /></td>
-                                        <td className="p-2 w-44 flex items-center gap-2 text-sm text-gray-600">
-                                          <Icon name="bell" size={14} className="text-gray-400"/>
-                                          <input type="number" value={u.notifyDays} onChange={e => updateCloudState({ globalUsers: globalUsers.map(usr => usr.id === u.id ? { ...usr, notifyDays: e.target.value } : usr) })} className="w-14 p-1.5 border border-transparent hover:border-gray-300 focus:bg-white focus:border-blue-500 outline-none rounded text-center" min="0" /> dní
-                                        </td>
+                                        <td className="p-2 pl-4 border-r border-gray-50"><input value={u.prefix} onChange={e => updateCloudState({ globalUsers: globalUsers.map(usr => usr.id === u.id ? { ...usr, prefix: e.target.value } : usr) })} className="w-full p-1.5 border border-transparent hover:border-gray-300 focus:bg-white focus:border-blue-500 outline-none rounded" placeholder="1.1." /></td>
+                                        <td className="p-2 border-r border-gray-50"><input value={u.name} onChange={e => updateCloudState({ globalUsers: globalUsers.map(usr => usr.id === u.id ? { ...usr, name: e.target.value } : usr) })} className="w-full p-1.5 border border-transparent hover:border-gray-300 focus:bg-white focus:border-blue-500 outline-none rounded" placeholder="Meno a priezvisko" /></td>
+                                        <td className="p-2 border-r border-gray-50"><input value={u.email} onChange={e => updateCloudState({ globalUsers: globalUsers.map(usr => usr.id === u.id ? { ...usr, email: e.target.value } : usr) })} type="email" className="w-full p-1.5 border border-transparent hover:border-gray-300 focus:bg-white focus:border-blue-500 outline-none rounded" placeholder="E-mail" /></td>
+                                        {/* NOVÉ POLE: POZÍCIA */}
+                                        <td className="p-2 border-r border-gray-50"><input value={u.position || ''} onChange={e => updateCloudState({ globalUsers: globalUsers.map(usr => usr.id === u.id ? { ...usr, position: e.target.value } : usr) })} className="w-full p-1.5 border border-transparent hover:border-gray-300 focus:bg-white focus:border-blue-500 outline-none rounded" placeholder="Napr. Technik" /></td>
+                                        
+                                        <td className="p-2 flex items-center gap-2 text-sm text-gray-600"><Icon name="bell" size={14} className="text-gray-400"/><input type="number" value={u.notifyDays} onChange={e => updateCloudState({ globalUsers: globalUsers.map(usr => usr.id === u.id ? { ...usr, notifyDays: e.target.value } : usr) })} className="w-14 p-1.5 border border-transparent hover:border-gray-300 focus:bg-white focus:border-blue-500 outline-none rounded text-center" min="0" /> dní</td>
                                         <td className="p-2 text-center pr-4"><button onClick={() => { if(confirm('Odstrániť používateľa? Stratí tým prístup na stránku.')) updateCloudState({ globalUsers: globalUsers.filter(usr => usr.id !== u.id) })}} className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 p-1"><Icon name="trash-can" size={16}/></button></td>
                                       </tr>
                                     ))}
                                   </tbody>
                                 </table>
                                 <div className="p-3 bg-gray-50/50 border-t border-gray-100">
-                                   <button onClick={() => updateCloudState({ globalUsers: [...globalUsers, { id: Date.now().toString(), deptId: dept.id, prefix: '', name: '', email: '', notifyDays: 1 }] })} className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1 font-medium px-2 py-1 rounded hover:bg-blue-50 transition-colors"><Icon name="plus" size={14}/> Pridať používateľa</button>
+                                   <button onClick={() => updateCloudState({ globalUsers: [...globalUsers, { id: Date.now().toString(), deptId: dept.id, prefix: '', name: '', email: '', position: '', notifyDays: 1 }] })} className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1 font-medium px-2 py-1 rounded hover:bg-blue-50 transition-colors"><Icon name="plus" size={14}/> Pridať používateľa</button>
                                 </div>
                               </div>
                             </div>
@@ -943,6 +958,51 @@
 
           const totalAssetsCost = assets.reduce((sum, item) => sum + (Number(item.quantity || 0) * Number(item.unitPrice || 0)), 0);
 
+          // --- KOMPONENT PRE VYKRESLENIE TÍMU PROJEKTU ---
+          const ProjectTeamSection = () => {
+              // Nájdeme ľudí, ktorí majú prístup do tohto projektu
+              const allowedUsersList = globalUsers.filter(u => (currentProject.allowedUsers || []).includes(u.id));
+              
+              return (
+                  <div className="bg-white rounded-xl shadow border border-gray-200 mb-6 p-6">
+                      <h3 className="font-bold text-gray-800 mb-4 border-b pb-2 flex items-center gap-2"><Icon name="users" /> Tím projektu</h3>
+                      
+                      <div className="mb-6 bg-blue-50/50 border border-blue-100 p-4 rounded-lg inline-block min-w-[300px]">
+                          <span className="text-xs text-blue-800 uppercase tracking-wider font-bold mb-1 block">Zodpovedná osoba za projekt (Tvorca)</span>
+                          <div className="text-lg font-bold text-blue-900 flex items-center gap-2 mt-1">
+                              <Icon name="user-tie" />
+                              {currentProject.createdByName || 'Neznámy (Založené pred aktualizáciou)'}
+                          </div>
+                      </div>
+
+                      {allowedUsersList.length > 0 && (
+                          <div>
+                              <h4 className="text-xs text-gray-500 uppercase tracking-wider font-bold mb-3">Členovia rozjazdového tímu</h4>
+                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                                  {departments.map(dept => {
+                                      const teamMembers = allowedUsersList.filter(u => u.deptId === dept.id);
+                                      if (teamMembers.length === 0) return null;
+                                      return (
+                                          <div key={dept.id} className="bg-gray-50 rounded border border-gray-200 p-3 shadow-sm">
+                                              <div className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 border-b border-gray-200 pb-1">{dept.prefix} {dept.name}</div>
+                                              <ul className="space-y-2">
+                                                {teamMembers.map(m => (
+                                                    <li key={m.id} className="flex flex-col">
+                                                        <span className="text-sm font-bold text-gray-800 leading-tight">{m.name}</span>
+                                                        {m.position && <span className="text-xs text-gray-500">{m.position}</span>}
+                                                    </li>
+                                                ))}
+                                              </ul>
+                                          </div>
+                                      )
+                                  })}
+                              </div>
+                          </div>
+                      )}
+                  </div>
+              );
+          };
+
           return (
             <div className="min-h-screen bg-gray-100 flex flex-col font-sans pb-12">
               <header className="bg-white shadow-sm border-b px-6 py-4 flex justify-between items-center print:hidden">
@@ -996,79 +1056,85 @@
                 
                 {/* --- HARMONOGRAM --- */}
                 {activeTab === 'harmonogram' && (
-                  <div className="bg-white rounded-xl shadow border border-gray-200 flex-1 flex flex-col overflow-hidden print:hidden">
-                    <div className="p-4 border-b flex justify-between items-center bg-gray-50/50">
-                      <h2 className="text-lg font-semibold text-gray-800">Zošit: Harmonogram úloh</h2>
-                      <button onClick={() => updateCurrentProject(p => ({...p, tasks: [...(p.tasks||[]), { id: Date.now().toString(), wbs: '', name: '', link: '', startDate: '', deadline: '', assignedTo: [], status: '1', notes: '' }] }))} className="flex items-center gap-1 px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-md text-sm font-medium transition-colors"><Icon name="plus" size={16} /> Pridať riadok</button>
-                    </div>
-                    <div className="overflow-auto flex-1">
-                      <table className="w-full text-left border-collapse min-w-max">
-                        <thead className="sticky top-0 bg-gray-100 border-b border-gray-300 z-10 shadow-sm">
-                          <tr>
-                            <th className="p-3 w-8"></th>
-                            <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-16">Sekcia</th>
-                            <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-64">Názov úlohy</th>
-                            <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-32">Začiatok</th>
-                            <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-32">Termín</th>
-                            {/* ZODPOVEDNÁ OSOBA -> MULTI SELECT */}
-                            <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-48">Zodpovednosť</th>
-                            <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-36">Stav</th>
-                            <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">Poznámka</th>
-                            {/* ODKAZ PRESUNUTÝ SEM */}
-                            <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-48">Odkaz / Link</th>
-                            <th className="p-3 w-10"></th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-200">
-                          {tasks.map((task, index) => {
-                            const currentTopLevel = task.wbs ? String(task.wbs).split('.')[0] : '';
-                            const prevTopLevel = index > 0 && tasks[index - 1].wbs ? String(tasks[index - 1].wbs).split('.')[0] : currentTopLevel;
-                            const isNewSection = index > 0 && currentTopLevel !== prevTopLevel && currentTopLevel !== '';
-                            const tdBorder = isNewSection ? 'border-t-[3px] border-t-gray-600' : 'border-t border-t-gray-200';
-                            const depth = task.wbs ? String(task.wbs).split('.').filter(Boolean).length : 0;
-                            return (
-                            <tr key={task.id} className={`hover:bg-blue-50/30 transition-colors group ${draggedTaskIndex === index ? 'opacity-50 bg-blue-100' : ''}`} draggable onDragStart={() => setDraggedTaskIndex(index)} onDragOver={(e) => e.preventDefault()} onDrop={() => {
-                              if (draggedTaskIndex === null || draggedTaskIndex === index) return;
-                              updateCurrentProject(p => {
-                                const newTasks = [...(p.tasks||[])];
-                                const [draggedItem] = newTasks.splice(draggedTaskIndex, 1);
-                                newTasks.splice(index, 0, draggedItem);
-                                return { ...p, tasks: newTasks };
-                              });
-                              setDraggedTaskIndex(null);
-                            }}>
-                              <td className={`p-2 border-r border-r-gray-100 text-center cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 ${tdBorder}`}><Icon name="grip-vertical" size={16} /></td>
-                              <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}><InputCell value={task.wbs} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, wbs: v} : t)}))} placeholder="1.1" /></td>
-                              <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}><div style={{ paddingLeft: depth > 1 ? `${(depth - 1) * 1.5}rem` : '0' }}><InputCell value={task.name} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, name: v} : t)}))} placeholder="Názov..." /></div></td>
-                              
-                              <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}><InputCell value={task.startDate} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, startDate: v} : t)}))} type="date" /></td>
-                              <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}><InputCell value={task.deadline} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, deadline: v} : t)}))} type="date" /></td>
-                              
-                              {/* NOVÉ: Výber viacerých osôb v tabuľke */}
-                              <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}>
-                                <MultiUserSelect value={task.assignedTo} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, assignedTo: v} : t)}))} users={globalUsers} departments={departments} />
-                              </td>
-                              
-                              <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}><StatusSelect value={task.status} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, status: v} : t)}))} /></td>
-                              <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}><InputCell value={task.notes} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, notes: v} : t)}))} placeholder="Poznámka..." /></td>
-                              
-                              {/* NOVÉ MIESTO PRE ODKAZ */}
-                              <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}>
-                                <div className="flex items-center gap-1">
-                                  <InputCell value={task.link} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, link: v} : t)}))} placeholder="https://..." />
-                                  {task.link && (
-                                    <a href={task.link.startsWith('http') ? task.link : `https://${task.link}`} target="_blank" className="p-1 text-blue-500 hover:text-blue-700 transition-colors rounded hover:bg-blue-100 flex-shrink-0" title="Otvoriť odkaz">
-                                      <Icon name="arrow-up-right-from-square" />
-                                    </a>
-                                  )}
-                                </div>
-                              </td>
+                  <div className="flex-1 flex flex-col overflow-hidden">
+                    
+                    {/* TÍM PROJEKTU V HARMONOGRAME */}
+                    <ProjectTeamSection />
 
-                              <td className={`p-2 text-center ${tdBorder}`}><button onClick={() => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).filter(t => t.id !== task.id)}))} className="text-red-400 hover:text-red-600 transition-colors p-1"><Icon name="trash-can" size={16} /></button></td>
+                    <div className="bg-white rounded-xl shadow border border-gray-200 flex-1 flex flex-col overflow-hidden print:hidden">
+                      <div className="p-4 border-b flex justify-between items-center bg-gray-50/50">
+                        <h2 className="text-lg font-semibold text-gray-800">Zošit: Harmonogram úloh</h2>
+                        <button onClick={() => updateCurrentProject(p => ({...p, tasks: [...(p.tasks||[]), { id: Date.now().toString(), wbs: '', name: '', link: '', startDate: '', deadline: '', assignedTo: [], status: '1', notes: '' }] }))} className="flex items-center gap-1 px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-md text-sm font-medium transition-colors"><Icon name="plus" size={16} /> Pridať riadok</button>
+                      </div>
+                      <div className="overflow-auto flex-1">
+                        <table className="w-full text-left border-collapse min-w-max">
+                          <thead className="sticky top-0 bg-gray-100 border-b border-gray-300 z-10 shadow-sm">
+                            <tr>
+                              <th className="p-3 w-8"></th>
+                              <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-16">Sekcia</th>
+                              <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-64">Názov úlohy</th>
+                              <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-32">Začiatok</th>
+                              <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-32">Termín</th>
+                              {/* ZODPOVEDNÁ OSOBA -> MULTI SELECT */}
+                              <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-48">Zodpovednosť</th>
+                              <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-36">Stav</th>
+                              <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-48">Poznámka</th>
+                              {/* ODKAZ PRESUNUTÝ NA KONIEC */}
+                              <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-48">Odkaz / Link</th>
+                              <th className="p-3 w-10"></th>
                             </tr>
-                          )})}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody className="divide-y divide-gray-200">
+                            {tasks.map((task, index) => {
+                              const currentTopLevel = task.wbs ? String(task.wbs).split('.')[0] : '';
+                              const prevTopLevel = index > 0 && tasks[index - 1].wbs ? String(tasks[index - 1].wbs).split('.')[0] : currentTopLevel;
+                              const isNewSection = index > 0 && currentTopLevel !== prevTopLevel && currentTopLevel !== '';
+                              const tdBorder = isNewSection ? 'border-t-[3px] border-t-gray-600' : 'border-t border-t-gray-200';
+                              const depth = task.wbs ? String(task.wbs).split('.').filter(Boolean).length : 0;
+                              return (
+                              <tr key={task.id} className={`hover:bg-blue-50/30 transition-colors group ${draggedTaskIndex === index ? 'opacity-50 bg-blue-100' : ''}`} draggable onDragStart={() => setDraggedTaskIndex(index)} onDragOver={(e) => e.preventDefault()} onDrop={() => {
+                                if (draggedTaskIndex === null || draggedTaskIndex === index) return;
+                                updateCurrentProject(p => {
+                                  const newTasks = [...(p.tasks||[])];
+                                  const [draggedItem] = newTasks.splice(draggedTaskIndex, 1);
+                                  newTasks.splice(index, 0, draggedItem);
+                                  return { ...p, tasks: newTasks };
+                                });
+                                setDraggedTaskIndex(null);
+                              }}>
+                                <td className={`p-2 border-r border-r-gray-100 text-center cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 ${tdBorder}`}><Icon name="grip-vertical" size={16} /></td>
+                                <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}><InputCell value={task.wbs} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, wbs: v} : t)}))} placeholder="1.1" /></td>
+                                <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}><div style={{ paddingLeft: depth > 1 ? `${(depth - 1) * 1.5}rem` : '0' }}><InputCell value={task.name} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, name: v} : t)}))} placeholder="Názov..." /></div></td>
+                                
+                                <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}><InputCell value={task.startDate} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, startDate: v} : t)}))} type="date" /></td>
+                                <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}><InputCell value={task.deadline} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, deadline: v} : t)}))} type="date" /></td>
+                                
+                                {/* NOVÉ: Výber viacerých osôb v tabuľke */}
+                                <td className={`p-2 border-r border-r-gray-100 ${tdBorder} align-top`}>
+                                  <MultiUserSelect value={task.assignedTo} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, assignedTo: v} : t)}))} users={globalUsers} departments={departments} />
+                                </td>
+                                
+                                <td className={`p-2 border-r border-r-gray-100 ${tdBorder} align-top`}><StatusSelect value={task.status} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, status: v} : t)}))} /></td>
+                                <td className={`p-2 border-r border-r-gray-100 ${tdBorder} align-top`}><InputCell value={task.notes} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, notes: v} : t)}))} placeholder="Poznámka..." /></td>
+                                
+                                {/* NOVÉ MIESTO PRE ODKAZ */}
+                                <td className={`p-2 border-r border-r-gray-100 ${tdBorder} align-top`}>
+                                  <div className="flex items-center gap-1">
+                                    <InputCell value={task.link} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, link: v} : t)}))} placeholder="https://..." />
+                                    {task.link && (
+                                      <a href={task.link.startsWith('http') ? task.link : `https://${task.link}`} target="_blank" className="p-1 text-blue-500 hover:text-blue-700 transition-colors rounded hover:bg-blue-100 flex-shrink-0" title="Otvoriť odkaz">
+                                        <Icon name="arrow-up-right-from-square" />
+                                      </a>
+                                    )}
+                                  </div>
+                                </td>
+
+                                <td className={`p-2 text-center ${tdBorder}`}><button onClick={() => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).filter(t => t.id !== task.id)}))} className="text-red-400 hover:text-red-600 transition-colors p-1"><Icon name="trash-can" size={16} /></button></td>
+                              </tr>
+                            )})}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -1076,8 +1142,10 @@
                 {/* --- GANTT (Týždňový) --- */}
                 {activeTab === 'gantt' && (
                   <div className="bg-white rounded-xl shadow border border-gray-200 flex-1 flex flex-col overflow-hidden p-6 print:hidden">
-                    <h2 className="text-xl font-bold text-gray-800 mb-6 border-b pb-2">Ganttov diagram</h2>
-                    <ExportGantt ganttData={ganttData} />
+                    <h2 className="text-xl font-bold text-gray-800 border-b pb-2">Ganttov diagram</h2>
+                    <div className="flex-1 overflow-auto"><div className="min-w-[800px]">
+                        <ExportGantt ganttData={ganttData} />
+                    </div></div>
                   </div>
                 )}
 
@@ -1086,7 +1154,7 @@
                   <div className="bg-white rounded-xl shadow border border-gray-200 flex-1 flex flex-col overflow-hidden print:hidden">
                     <div className="p-4 border-b flex justify-between items-center bg-gray-50/50 print:hidden">
                       <h2 className="text-lg font-semibold text-gray-800">Zošit: Rozpočet a Majetok</h2>
-                      <button onClick={() => updateCurrentProject(p => ({...p, assets: [...(p.assets||[]), { id: Date.now().toString(), name: '', quantity: 1, unitPrice: 0, assignedTo: '', status: '1' }] }))} className="flex items-center gap-1 px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-md text-sm font-medium transition-colors"><Icon name="plus" size={16} /> Pridať položku</button>
+                      <button onClick={() => updateCurrentProject(p => ({...p, assets: [...(p.assets||[]), { id: Date.now().toString(), name: '', quantity: 1, unitPrice: 0, assignedTo: [], status: '1' }] }))} className="flex items-center gap-1 px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-md text-sm font-medium transition-colors"><Icon name="plus" size={16} /> Pridať položku</button>
                     </div>
                     <div className="overflow-auto flex-1">
                       <table className="w-full text-left border-collapse min-w-max">
@@ -1174,7 +1242,7 @@
               
               {/* EXPORT: HARMONOGRAM */}
               <div className="pdf-export-hidden report-mode" id="report-export-container" style={{ padding: '15mm' }}>
-                <div className="flex justify-between items-end border-b-2 border-gray-800 pb-4 mb-8">
+                <div className="flex justify-between items-end border-b-2 border-gray-800 pb-4 mb-6">
                   <img src={LOGO_URL} alt="Logo" className="h-14 object-contain" />
                   <div className="text-right">
                     <h1 className="text-2xl font-bold text-gray-900 leading-tight">{currentProject.name}</h1>
@@ -1187,7 +1255,15 @@
                     <p className="text-xs text-gray-500 mt-1">Stav k dátumu: {new Date().toLocaleDateString('sk-SK')}</p>
                   </div>
                 </div>
-                <ExportTasks tasks={tasks} globalUsers={globalUsers} />
+                
+                {/* Tím projektu sa tiež tlačí do PDF */}
+                <div className="mb-6 page-break-inside-avoid">
+                    <ProjectTeamSection />
+                </div>
+                
+                <div className="mb-10">
+                  <ExportTasks tasks={tasks} globalUsers={globalUsers} />
+                </div>
               </div>
 
               {/* EXPORT: GANTT */}
@@ -1215,9 +1291,11 @@
                      <img src={user?.photoURL || 'https://via.placeholder.com/30'} alt="Avatar" className="w-6 h-6 rounded-full border border-gray-600"/>
                      <span>{user?.displayName} ({user?.email})</span>
                    </span>
+                   <span className="border-l border-gray-700 pl-4">Práva: <span className={isAdmin ? 'text-green-400 font-bold' : 'text-blue-300 font-bold'}>{isAdmin ? 'Administrátor (Plný prístup)' : 'Člen rozjazdového tímu'}</span></span>
                  </div>
                  <div className="flex items-center gap-4">
                    {isAdmin && <div className="text-gray-400 border-r border-gray-700 pr-4 mr-1">{APP_VERSION}</div>}
+                   <div><span className="text-gray-400">UID:</span> <code className="bg-gray-800 px-2 py-1 rounded select-all font-mono tracking-wider ml-1">{user?.uid}</code></div>
                    <button onClick={handleLogout} className="bg-gray-800 hover:bg-red-600 px-3 py-1 rounded transition-colors text-white border border-gray-700 hover:border-red-500">Odhlásiť sa</button>
                  </div>
               </div>

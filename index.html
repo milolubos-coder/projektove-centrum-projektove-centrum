@@ -21,20 +21,25 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
     <style>
-        /* Štýly pre natívnu tlač (Vysoká kvalita) */
+        /* Skrytý kontajner pre generovanie PDF - nie je ho vidieť na obrazovke, ale knižnica ho dokáže odfotiť */
+        .pdf-export-hidden {
+            position: absolute;
+            top: -9999px;
+            left: -9999px;
+            background-color: white;
+            z-index: -10;
+        }
+        .pdf-export-hidden.gantt-mode {
+            width: 297mm;
+        }
+        .pdf-export-hidden.report-mode {
+            width: 210mm;
+        }
+        
         @media print {
             body { -webkit-print-color-adjust: exact; print-color-adjust: exact; background-color: white !important; }
             .print\:hidden { display: none !important; }
-            @page { margin: 0; size: A4 portrait; }
-            
-            /* Ak tlačíme bežný report (Harmonogram) */
-            body:not(.printing-gantt) .print-gantt-only { display: none !important; }
-            body:not(.printing-gantt) .print-report-only { display: block !important; }
-            
-            /* Ak tlačíme Gantt, zmeníme orientáciu na landscape */
-            body.printing-gantt .print-report-only { display: none !important; }
-            body.printing-gantt .print-gantt-only { display: block !important; }
-            body.printing-gantt @page { size: A4 landscape; margin: 5mm; }
+            @page { margin: 0; size: auto; }
         }
         
         /* Zlepšený scrollbar pre tabuľky */
@@ -60,7 +65,7 @@
         const { useState, useEffect, useMemo } = React;
 
         // --- VERZIA APLIKÁCIE ---
-        const APP_VERSION = "Verzia: 15.03.2026, 18:55 (Presun Bateriek a Kariet)";
+        const APP_VERSION = "Verzia: 15.03.2026, 19:00 (Oprava otvárania projektov, Plný kód)";
 
         // ==========================================
         // VÁŠ FIREBASE KĽÚČ
@@ -108,7 +113,6 @@
           </select>
         );
 
-        // Výber jednej osoby (napr. pre Zodpovednú osobu za projekt)
         const UserSelect = ({ value, onChange, users, departments }) => (
           <select 
             value={value || ''} 
@@ -126,7 +130,6 @@
           </select>
         );
 
-        // Výber viacerých osôb v tabuľke (S Vyhľadávaním)
         const MultiUserSelect = ({ value, onChange, users, departments }) => {
             const [open, setOpen] = useState(false);
             const [searchTerm, setSearchTerm] = useState('');
@@ -138,7 +141,6 @@
                 return u ? u.name : null;
             }).filter(Boolean).join(', ');
 
-            // Filter
             const filteredUsers = users.filter(u => 
                 (u.name || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
                 (u.prefix || '').toLowerCase().includes(searchTerm.toLowerCase())
@@ -157,7 +159,6 @@
                     
                     {open && (
                         <div className="absolute z-50 mt-1 w-64 bg-white border border-gray-200 shadow-xl rounded-md max-h-72 flex flex-col left-0">
-                            {/* Vyhľadávacie pole */}
                             <div className="p-2 border-b border-gray-200 bg-gray-50 sticky top-0 z-10">
                                 <div className="relative">
                                     <Icon name="magnifying-glass" className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs" />
@@ -220,7 +221,7 @@
           />
         );
 
-        // --- BATERKOVÝ GRAF (Pre Dashboard a Karty projektov) ---
+        // --- BATERKOVÝ GRAF ---
         const BatteryChart = ({ title, subtitle, tasks }) => {
             const total = tasks.length || 1; 
             const c1 = tasks.filter(t => t.status === '1').length;
@@ -234,7 +235,7 @@
             const isEmpty = tasks.length === 0;
 
             return (
-                <div className="relative w-full h-16 bg-gray-200 rounded-lg overflow-hidden flex shadow-inner border border-gray-300">
+                <div className="relative w-full h-16 bg-gray-200 rounded-lg overflow-hidden flex shadow-inner border border-gray-300 transition-transform hover:scale-[1.01] cursor-pointer group">
                     {isEmpty ? (
                         <div className="w-full h-full bg-gray-100"></div>
                     ) : (
@@ -266,10 +267,185 @@
             );
         };
 
+        // --- EXPORT KOMPONENTY (TLAČ) ---
+        const ExportTasks = ({ tasks, globalUsers }) => (
+            <table className="w-full text-left border-collapse text-sm mb-10">
+                <thead>
+                    <tr className="border-b-2 border-gray-800">
+                        <th className="py-2 pr-2 font-bold text-gray-800 w-12">WBS</th>
+                        <th className="py-2 pr-2 font-bold text-gray-800">Názov úlohy</th>
+                        <th className="py-2 pr-2 font-bold text-gray-800 w-24">Začiatok</th>
+                        <th className="py-2 pr-2 font-bold text-gray-800 w-24">Termín</th>
+                        <th className="py-2 pr-2 font-bold text-gray-800 w-32">Zodpovednosť</th>
+                        <th className="py-2 pr-2 font-bold text-gray-800 w-24">Stav</th>
+                        <th className="py-2 font-bold text-gray-800 w-32">Pozn. / Odkaz</th>
+                    </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                    {tasks.map(task => {
+                        const statusLabel = STATUS_OPTIONS.find(o => o.value === task.status)?.label || '-';
+                        const valArray = Array.isArray(task.assignedTo) ? task.assignedTo : (task.assignedTo ? [task.assignedTo] : []);
+                        const userName = valArray.map(id => globalUsers.find(u => u.id === id)?.name).filter(Boolean).join(', ') || '-';
+                        
+                        const depth = task.wbs ? String(task.wbs).split('.').filter(Boolean).length : 0;
+                        return (
+                            <tr key={task.id} className="page-break-inside-avoid">
+                                <td className="py-2 pr-2 text-gray-600 align-top">{task.wbs}</td>
+                                <td className="py-2 pr-2 text-gray-900 font-medium align-top">
+                                    <div style={{ paddingLeft: depth > 1 ? `${(depth - 1) * 1.5}rem` : '0' }}>{task.name}</div>
+                                </td>
+                                <td className="py-2 pr-2 text-gray-700 align-top">{task.startDate ? new Date(task.startDate).toLocaleDateString('sk-SK') : '-'}</td>
+                                <td className="py-2 pr-2 text-gray-700 align-top">{task.deadline ? new Date(task.deadline).toLocaleDateString('sk-SK') : '-'}</td>
+                                <td className="py-2 pr-2 text-gray-700 align-top">{userName}</td>
+                                <td className="py-2 pr-2 text-gray-700 align-top">{statusLabel}</td>
+                                <td className="py-2 text-gray-700 align-top">
+                                    {task.notes && <div className="text-xs mb-1">{task.notes}</div>}
+                                    {task.link && <div className="text-xs text-blue-600 break-all">{task.link}</div>}
+                                </td>
+                            </tr>
+                        );
+                    })}
+                </tbody>
+            </table>
+        );
 
-        // ======================================================================
-        // HLAVNÁ APLIKÁCIA
-        // ======================================================================
+        const ExportGantt = ({ ganttData }) => {
+            if (!ganttData) return <div className="text-center text-gray-500 py-10 italic">Pre zobrazenie diagramu musia mať úlohy vyplnený Začiatok aj Termín.</div>;
+            
+            const weeks = [];
+            let currDate = new Date(ganttData.minDate);
+            let dayOfWeek = currDate.getDay();
+            let diffToMonday = currDate.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
+            let firstMonday = new Date(currDate.setDate(diffToMonday));
+            firstMonday.setHours(0,0,0,0);
+            
+            if (firstMonday < ganttData.minDate) {
+                firstMonday.setDate(firstMonday.getDate() + 7);
+            }
+
+            while (firstMonday <= ganttData.maxDate) {
+                weeks.push(new Date(firstMonday));
+                firstMonday.setDate(firstMonday.getDate() + 7);
+            }
+
+            return (
+                <div className="mt-8 pt-6 relative">
+                    <div className="flex border-b-2 border-gray-400 pb-2 mb-4 relative z-20 bg-white/80">
+                        <div className="w-1/4 font-bold text-gray-800 text-sm">Názov úlohy</div>
+                        <div className="w-3/4 relative h-6 border-l-2 border-gray-400">
+                            {weeks.map(w => {
+                                const lp = ((w.getTime() - ganttData.minDate.getTime()) / ganttData.totalTime) * 100;
+                                return (
+                                    <div key={w.getTime()} className="absolute top-0 bottom-0" style={{ left: `${lp}%` }}>
+                                        <span className="absolute -top-6 -translate-x-1/2 text-[10px] text-gray-600 font-bold bg-white px-1 whitespace-nowrap">
+                                            {w.toLocaleDateString('sk-SK', {day: 'numeric', month: 'numeric'})}
+                                        </span>
+                                    </div>
+                                )
+                            })}
+                        </div>
+                    </div>
+                    
+                    <div className="relative">
+                        <div className="absolute inset-0 z-0">
+                             <div className="w-1/4 h-full float-left border-r border-gray-200"></div>
+                             <div className="w-3/4 h-full float-left relative">
+                                 {weeks.map(w => {
+                                    const lp = ((w.getTime() - ganttData.minDate.getTime()) / ganttData.totalTime) * 100;
+                                    return <div key={w.getTime()} className="absolute top-0 bottom-0 border-l border-dashed border-gray-300" style={{ left: `${lp}%` }}></div>
+                                 })}
+                             </div>
+                        </div>
+
+                        <div className="space-y-3 relative z-10">
+                            {ganttData.validTasks.map(task => {
+                                const tStart = new Date(task.startDate).getTime();
+                                const tEnd = new Date(task.deadline).getTime();
+                                let leftPercent = ((tStart - ganttData.minDate.getTime()) / ganttData.totalTime) * 100;
+                                let widthPercent = ((tEnd - tStart) / ganttData.totalTime) * 100;
+                                if (widthPercent <= 0) widthPercent = 1;
+                                
+                                // OPRAVA PÁDU: Bezpečné získanie farby
+                                const statusMatch = STATUS_OPTIONS.find(o => o.value === task.status);
+                                const statusColor = statusMatch ? statusMatch.color.split(' ')[0] : 'bg-gray-400';
+                                
+                                return (
+                                    <div key={task.id} className="flex items-center group page-break-inside-avoid relative">
+                                        <div className="w-1/4 pr-4 truncate text-xs font-medium text-gray-800 bg-white/90">{task.wbs} {task.name}</div>
+                                        <div className="w-3/4 relative h-6">
+                                            <div className={`absolute h-5 top-0.5 rounded shadow-sm flex items-center px-1 text-[9px] font-medium text-gray-900 ${statusColor} print:!bg-opacity-100 border border-gray-300/20`} style={{ left: `${leftPercent}%`, width: `${widthPercent}%`, minWidth: '16px', WebkitPrintColorAdjust: 'exact' }}>
+                                                {widthPercent > 6 && <span className="truncate opacity-90">{new Date(task.startDate).toLocaleDateString('sk-SK').slice(0, -5)} - {new Date(task.deadline).toLocaleDateString('sk-SK').slice(0, -5)}</span>}
+                                            </div>
+                                        </div>
+                                    </div>
+                                )
+                            })}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- KOMPONENT PRE TÍM PROJEKTU (Vytiahnutý von pre lepšiu stabilitu) ---
+        const ProjectTeamSection = ({ currentProject, globalUsers, departments, updateCurrentProject, isExport = false }) => {
+            const allowedUsersList = globalUsers.filter(u => (currentProject.allowedUsers || []).includes(u.id));
+            const pm = globalUsers.find(u => u.id === currentProject.projectManagerId);
+            
+            return (
+                <div className={`bg-white rounded-xl shadow border border-gray-200 mb-6 p-6 ${isExport ? 'shadow-none border-none p-0' : ''}`}>
+                    <h3 className="font-bold text-gray-800 mb-4 border-b pb-2 flex items-center gap-2"><Icon name="users" /> Tím projektu</h3>
+                    
+                    <div className="mb-6 bg-blue-50/50 border border-blue-100 p-4 rounded-lg inline-block min-w-[300px]">
+                        <span className="text-xs text-blue-800 uppercase tracking-wider font-bold mb-2 block">Zodpovedná osoba za projekt</span>
+                        
+                        {isExport ? (
+                            <div className="text-lg font-bold text-blue-900 flex items-center gap-2 mt-1">
+                                <Icon name="user-tie" />
+                                {pm ? `${pm.name} ${pm.position ? `(${pm.position})` : ''}` : 'Nenastavené'}
+                            </div>
+                        ) : (
+                            <div className="flex items-center gap-2">
+                                <Icon name="user-tie" className="text-blue-900" />
+                                <div className="flex-1 bg-white border border-blue-200 rounded min-w-[250px]">
+                                    <UserSelect 
+                                        value={currentProject.projectManagerId} 
+                                        onChange={(v) => updateCurrentProject(p => ({...p, projectManagerId: v}))} 
+                                        users={globalUsers} 
+                                        departments={departments} 
+                                    />
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {allowedUsersList.length > 0 && (
+                        <div>
+                            <h4 className="text-xs text-gray-500 uppercase tracking-wider font-bold mb-3">Členovia rozjazdového tímu</h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                                {departments.map(dept => {
+                                    const teamMembers = allowedUsersList.filter(u => u.deptId === dept.id);
+                                    if (teamMembers.length === 0) return null;
+                                    return (
+                                        <div key={dept.id} className="bg-gray-50 rounded border border-gray-200 p-3 shadow-sm page-break-inside-avoid">
+                                            <div className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 border-b border-gray-200 pb-1">{dept.prefix} {dept.name}</div>
+                                            <ul className="space-y-2">
+                                              {teamMembers.map(m => (
+                                                  <li key={m.id} className="flex flex-col">
+                                                      <span className="text-sm font-bold text-gray-800 leading-tight">{m.name}</span>
+                                                      {m.position && <span className="text-xs text-gray-500">{m.position}</span>}
+                                                  </li>
+                                              ))}
+                                            </ul>
+                                        </div>
+                                    )
+                                })}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
         const INITIAL_DB_STATE = {
           admins: [], 
           departments: [
@@ -301,7 +477,6 @@
           const [overviewUserId, setOverviewUserId] = useState('');
 
           const [activeTab, setActiveTab] = useState('harmonogram');
-          // PREVOLENÁ ZÁLOŽKA ZMENENÁ NA PROJEKTY (Ako ste si priali)
           const [dashboardTab, setDashboardTab] = useState('projects');
 
           const [draggedTaskIndex, setDraggedTaskIndex] = useState(null);
@@ -560,23 +735,21 @@
           // ======================================================================
           if (!activeProjectId) {
             
-            // 1. Získať prístupné projekty (Bez šablón)
             let accessibleProjects = projects.filter(p => {
               if (p.isTemplate) return false;
               if (isAdmin) return true;
               return p.allowedUsers && currentUserObj && p.allowedUsers.includes(currentUserObj.id);
             });
 
-            // 2. Vyhľadávanie v názve
+            // Filter (Meno - bezpečné pre staré projekty)
             if (dashboardSearch.trim() !== '') {
-                accessibleProjects = accessibleProjects.filter(p => p.name.toLowerCase().includes(dashboardSearch.toLowerCase()));
+                accessibleProjects = accessibleProjects.filter(p => (p.name || '').toLowerCase().includes(dashboardSearch.toLowerCase()));
             }
 
-            // 3. Zoradenie (Aplikuje sa pre záložku Projekty)
+            // Radenie
             accessibleProjects.sort((a, b) => {
-                if (dashboardSort === 'alpha_asc') return a.name.localeCompare(b.name);
+                if (dashboardSort === 'alpha_asc') return (a.name || '').localeCompare(b.name || '');
                 if (dashboardSort === 'created_desc') return (b.createdAt || parseInt(b.id)) - (a.createdAt || parseInt(a.id));
-                // Default: modified_desc
                 return (b.lastModifiedTs || parseInt(b.id)) - (a.lastModifiedTs || parseInt(a.id));
             });
 
@@ -754,7 +927,6 @@
                     </div>
                   </header>
 
-                  {/* ZÁLOŽKY HLAVNEJ OBRAZOVKY */}
                   <div className="flex space-x-6 mb-8 border-b border-gray-200">
                     <button onClick={() => setDashboardTab('projects')} className={`pb-3 text-lg font-medium transition-colors ${dashboardTab === 'projects' ? 'border-b-2 border-blue-600 text-blue-700' : 'text-gray-500 hover:text-gray-800'}`}>
                       <Icon name="folder-tree" className="mr-2"/> Projekty a Šablóny
@@ -792,7 +964,7 @@
                       {/* AKTÍVNE PROJEKTY S BATERKOVÝM GRAFOM */}
                       <section className="mb-10">
                         <h2 className="text-xl font-semibold text-gray-800 mb-4 flex items-center gap-2"><Icon name="folder-open" className="text-orange-500" /> Projekty v riešení ({activeProjects.length})</h2>
-                        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                           {activeProjects.map(proj => (
                             <div key={proj.id} className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow relative group cursor-pointer" onClick={() => setActiveProjectId(proj.id)}>
                               
@@ -827,7 +999,7 @@
                       {/* VYRIEŠENÉ PROJEKTY S BATERKOVÝM GRAFOM */}
                       <section className="mb-10">
                         <h2 className="text-xl font-semibold text-gray-800 mb-4 flex items-center gap-2 opacity-70"><Icon name="folder-closed" className="text-green-500" /> Vyriešené projekty ({completedProjects.length})</h2>
-                        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6 opacity-70 hover:opacity-100 transition-opacity">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 opacity-70 hover:opacity-100 transition-opacity">
                           {completedProjects.map(proj => (
                             <div key={proj.id} className="bg-gray-50 p-4 rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow relative group cursor-pointer" onClick={() => setActiveProjectId(proj.id)}>
                               
@@ -980,7 +1152,6 @@
                                 </div>
                             </div>
                         </div>
-
                     </div>
                   )}
 
@@ -1047,7 +1218,7 @@
                                       <tr key={u.id} className="hover:bg-gray-50 transition-colors group">
                                         <td className="p-2 pl-4 border-r border-gray-50"><input value={u.prefix} onChange={e => updateCloudState({ globalUsers: globalUsers.map(usr => usr.id === u.id ? { ...usr, prefix: e.target.value } : usr) })} className="w-full p-1.5 border border-transparent hover:border-gray-300 focus:bg-white focus:border-blue-500 outline-none rounded" placeholder="1.1." /></td>
                                         <td className="p-2 border-r border-gray-50"><input value={u.name} onChange={e => updateCloudState({ globalUsers: globalUsers.map(usr => usr.id === u.id ? { ...usr, name: e.target.value } : usr) })} className="w-full p-1.5 border border-transparent hover:border-gray-300 focus:bg-white focus:border-blue-500 outline-none rounded" placeholder="Meno a priezvisko" /></td>
-                                        <td className="p-2 border-r border-gray-50"><input value={u.email} onChange={e => updateCloudState({ globalUsers: globalUsers.map(usr => usr.id === u.id ? { ...usr, email: e.target.value } : usr) })} type="email" className="w-full p-1.5 border border-transparent hover:border-gray-300 focus:bg-white focus:border-blue-500 outline-none rounded" placeholder="Prístupový E-mail" /></td>
+                                        <td className="p-2 border-r border-gray-50"><input value={u.email} onChange={e => updateCloudState({ globalUsers: globalUsers.map(usr => usr.id === u.id ? { ...usr, email: e.target.value } : usr) })} type="email" className="w-full p-1.5 border border-transparent hover:border-gray-300 focus:bg-white focus:border-blue-500 outline-none rounded" placeholder="Prístupový Google E-mail" /></td>
                                         <td className="p-2 border-r border-gray-50"><input value={u.position || ''} onChange={e => updateCloudState({ globalUsers: globalUsers.map(usr => usr.id === u.id ? { ...usr, position: e.target.value } : usr) })} className="w-full p-1.5 border border-transparent hover:border-gray-300 focus:bg-white focus:border-blue-500 outline-none rounded" placeholder="Napr. Technik" /></td>
                                         <td className="p-2 flex items-center gap-2 text-sm text-gray-600"><Icon name="bell" size={14} className="text-gray-400"/><input type="number" value={u.notifyDays} onChange={e => updateCloudState({ globalUsers: globalUsers.map(usr => usr.id === u.id ? { ...usr, notifyDays: e.target.value } : usr) })} className="w-14 p-1.5 border border-transparent hover:border-gray-300 focus:bg-white focus:border-blue-500 outline-none rounded text-center" min="0" /> dní</td>
                                         <td className="p-2 text-center pr-4"><button onClick={() => { if(confirm('Odstrániť používateľa? Stratí tým prístup na stránku.')) updateCloudState({ globalUsers: globalUsers.filter(usr => usr.id !== u.id) })}} className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 p-1"><Icon name="trash-can" size={16}/></button></td>
@@ -1086,25 +1257,14 @@
             );
           }
 
-          // BEZPEČNOSTNÁ POISTKA PROTI BIELEJ OBRAZOVKE 
-          if (activeProjectId && !currentProject) {
-            return (
-              <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6 text-center">
-                <Icon name="triangle-exclamation" size={48} className="text-yellow-500 mb-4" />
-                <h2 className="text-xl font-bold text-gray-800 mb-2">Projekt sa nenašiel</h2>
-                <p className="text-gray-600 mb-6">Tento projekt bol pravdepodobne vymazaný iným administrátorom.</p>
-                <button onClick={() => setActiveProjectId(null)} className="px-6 py-2 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700">Späť na prehľad</button>
-              </div>
-            );
-          }
-
           // ======================================================================
-          // --- VÝPOČTY PRE EDITOR KONKRÉTNEHO PROJEKTU ---
+          // --- EDITOR KONKRÉTNEHO PROJEKTU ---
           // ======================================================================
           const tasks = currentProject.tasks || [];
           const assets = currentProject.assets || [];
           const contacts = currentProject.contacts || [];
 
+          // Bezpečná kalkulácia Ganttovho diagramu
           let ganttData = null;
           const validTasks = tasks.filter(t => {
             if (!t.startDate || !t.deadline) return false;
@@ -1125,67 +1285,6 @@
 
           const totalAssetsCost = assets.reduce((sum, item) => sum + (Number(item.quantity || 0) * Number(item.unitPrice || 0)), 0);
 
-          // --- KOMPONENT PRE VYKRESLENIE TÍMU PROJEKTU ---
-          const ProjectTeamSection = ({ isExport = false }) => {
-              const allowedUsersList = globalUsers.filter(u => (currentProject.allowedUsers || []).includes(u.id));
-              const pm = globalUsers.find(u => u.id === currentProject.projectManagerId);
-              
-              return (
-                  <div className={`bg-white rounded-xl shadow border border-gray-200 mb-6 p-6 ${isExport ? 'shadow-none border-none p-0' : ''}`}>
-                      <h3 className="font-bold text-gray-800 mb-4 border-b pb-2 flex items-center gap-2"><Icon name="users" /> Tím projektu</h3>
-                      
-                      <div className="mb-6 bg-blue-50/50 border border-blue-100 p-4 rounded-lg inline-block min-w-[300px]">
-                          <span className="text-xs text-blue-800 uppercase tracking-wider font-bold mb-2 block">Zodpovedná osoba za projekt</span>
-                          
-                          {/* Pre PDF Export zobrazíme len text. Pre web zobrazíme roletku s výberom. */}
-                          {isExport ? (
-                              <div className="text-lg font-bold text-blue-900 flex items-center gap-2 mt-1">
-                                  <Icon name="user-tie" />
-                                  {pm ? `${pm.name} ${pm.position ? `(${pm.position})` : ''}` : 'Nenastavené'}
-                              </div>
-                          ) : (
-                              <div className="flex items-center gap-2">
-                                  <Icon name="user-tie" className="text-blue-900" />
-                                  <div className="flex-1 bg-white border border-blue-200 rounded min-w-[250px]">
-                                      <UserSelect 
-                                          value={currentProject.projectManagerId} 
-                                          onChange={(v) => updateCurrentProject(p => ({...p, projectManagerId: v}))} 
-                                          users={globalUsers} 
-                                          departments={departments} 
-                                      />
-                                  </div>
-                              </div>
-                          )}
-                      </div>
-
-                      {allowedUsersList.length > 0 && (
-                          <div>
-                              <h4 className="text-xs text-gray-500 uppercase tracking-wider font-bold mb-3">Členovia rozjazdového tímu</h4>
-                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                                  {departments.map(dept => {
-                                      const teamMembers = allowedUsersList.filter(u => u.deptId === dept.id);
-                                      if (teamMembers.length === 0) return null;
-                                      return (
-                                          <div key={dept.id} className="bg-gray-50 rounded border border-gray-200 p-3 shadow-sm page-break-inside-avoid">
-                                              <div className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 border-b border-gray-200 pb-1">{dept.prefix} {dept.name}</div>
-                                              <ul className="space-y-2">
-                                                {teamMembers.map(m => (
-                                                    <li key={m.id} className="flex flex-col">
-                                                        <span className="text-sm font-bold text-gray-800 leading-tight">{m.name}</span>
-                                                        {m.position && <span className="text-xs text-gray-500">{m.position}</span>}
-                                                    </li>
-                                                ))}
-                                              </ul>
-                                          </div>
-                                      )
-                                  })}
-                              </div>
-                          </div>
-                      )}
-                  </div>
-              );
-          };
-
           return (
             <div className="min-h-screen bg-gray-100 flex flex-col font-sans pb-12">
               <header className="bg-white shadow-sm border-b px-6 py-4 flex justify-between items-center print:hidden">
@@ -1198,7 +1297,6 @@
                       {(isAdmin || !currentProject.isTemplate) && <Icon name="pen" size={16} className="text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity print:hidden" />}
                     </div>
                     
-                    {/* Časový interval projektu & Celkový Status */}
                     <div className="flex items-center gap-3 mt-2 px-1 print:hidden">
                       <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${currentProject.isTemplate ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
                         {currentProject.isTemplate ? 'Šablóna' : 'Projekt'}
@@ -1253,9 +1351,8 @@
                 {activeTab === 'harmonogram' && (
                   <div className="flex-1 flex flex-col overflow-hidden">
                     
-                    {/* TÍM PROJEKTU V HARMONOGRAME */}
                     <div className="print:hidden">
-                        <ProjectTeamSection isExport={false} />
+                        <ProjectTeamSection currentProject={currentProject} globalUsers={globalUsers} departments={departments} updateCurrentProject={updateCurrentProject} isExport={false} />
                     </div>
 
                     <div className="bg-white rounded-xl shadow border border-gray-200 flex-1 flex flex-col overflow-hidden print:hidden">
@@ -1272,7 +1369,6 @@
                               <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-64">Názov úlohy</th>
                               <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-32">Začiatok</th>
                               <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-32">Termín</th>
-                              {/* ZODPOVEDNÁ OSOBA -> MULTI SELECT so SEARCOM */}
                               <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-48">Zodpovednosť</th>
                               <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-36">Stav</th>
                               <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-48">Poznámka</th>
@@ -1288,7 +1384,24 @@
                               const tdBorder = isNewSection ? 'border-t-[3px] border-t-gray-600' : 'border-t border-t-gray-200';
                               const depth = task.wbs ? String(task.wbs).split('.').filter(Boolean).length : 0;
                               return (
-                              <tr key={task.id} className={`hover:bg-blue-50/30 transition-colors group ${draggedTaskIndex === index ? 'opacity-50 bg-blue-100' : ''}`}>
+                              <tr key={task.id} className={`hover:bg-blue-50/30 transition-colors group ${draggedTaskIndex === index ? 'opacity-50 bg-blue-100' : ''}`} 
+                                draggable 
+                                onDragStart={(e) => {
+                                  if(e.dataTransfer) { e.dataTransfer.setData('text/plain', index.toString()); e.dataTransfer.effectAllowed = 'move'; }
+                                  setDraggedTaskIndex(index);
+                                }} 
+                                onDragOver={(e) => e.preventDefault()} 
+                                onDrop={(e) => {
+                                  e.preventDefault();
+                                  if (draggedTaskIndex === null || draggedTaskIndex === index) return;
+                                  updateCurrentProject(p => {
+                                    const newTasks = [...(p.tasks||[])];
+                                    const [draggedItem] = newTasks.splice(draggedTaskIndex, 1);
+                                    newTasks.splice(index, 0, draggedItem);
+                                    return { ...p, tasks: newTasks };
+                                  });
+                                  setDraggedTaskIndex(null);
+                              }}>
                                 <td className={`p-1 border-r border-r-gray-100 text-center align-middle ${tdBorder}`}>
                                   <div className="flex flex-col items-center justify-center">
                                     <button onClick={(e) => { 
@@ -1310,7 +1423,6 @@
                                 <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}><InputCell value={task.startDate} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, startDate: v} : t)}))} type="date" /></td>
                                 <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}><InputCell value={task.deadline} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, deadline: v} : t)}))} type="date" /></td>
                                 
-                                {/* Výber viacerých osôb v tabuľke (S VYHĽADÁVANÍM) */}
                                 <td className={`p-2 border-r border-r-gray-100 ${tdBorder} align-top`}>
                                   <MultiUserSelect value={task.assignedTo} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, assignedTo: v} : t)}))} users={globalUsers} departments={departments} />
                                 </td>
@@ -1318,7 +1430,6 @@
                                 <td className={`p-2 border-r border-r-gray-100 ${tdBorder} align-top`}><StatusSelect value={task.status} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, status: v} : t)}))} /></td>
                                 <td className={`p-2 border-r border-r-gray-100 ${tdBorder} align-top`}><InputCell value={task.notes} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, notes: v} : t)}))} placeholder="Poznámka..." /></td>
                                 
-                                {/* ODKAZ */}
                                 <td className={`p-2 border-r border-r-gray-100 ${tdBorder} align-top`}>
                                   <div className="flex items-center gap-1">
                                     <InputCell value={task.link} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, link: v} : t)}))} placeholder="https://..." />
@@ -1441,7 +1552,6 @@
               {/* --- SKRYTÉ EXPORT KONTAJNERY PRE NATÍVNU TLAČ (PDF) --- */}
               {/* ========================================================================= */}
               
-              {/* EXPORT: HARMONOGRAM */}
               <div className="hidden print:block w-full print-report-only page-break-after-always">
                 <div className="flex justify-between items-end border-b-2 border-gray-800 pb-4 mb-6">
                   <img src={LOGO_URL} alt="Logo" className="h-14 object-contain" />
@@ -1457,9 +1567,8 @@
                   </div>
                 </div>
                 
-                {/* Tím projektu sa tiež tlačí do PDF */}
                 <div className="mb-6 page-break-inside-avoid">
-                    <ProjectTeamSection isExport={true} />
+                    <ProjectTeamSection currentProject={currentProject} globalUsers={globalUsers} departments={departments} updateCurrentProject={updateCurrentProject} isExport={true} />
                 </div>
                 
                 <div className="mb-10">
@@ -1467,7 +1576,6 @@
                 </div>
               </div>
 
-              {/* EXPORT: GANTT */}
               <div className="hidden print:block w-full print-gantt-only">
                 <div className="flex justify-between items-end border-b-2 border-gray-800 pb-4 mb-6">
                   <img src={LOGO_URL} alt="Logo" className="h-10 object-contain" />
@@ -1485,7 +1593,7 @@
                 <ExportGantt ganttData={ganttData} />
               </div>
 
-              {/* SPODNÁ LIŠTA EDITOR - IDENTIFIKÁTOR A ODHLÁSENIE */}
+              {/* SPODNÁ LIŠTA EDITOR */}
               <div className="fixed bottom-0 left-0 w-full bg-gray-900 text-white p-2 px-6 text-xs flex justify-between items-center z-40 print:hidden shadow-lg">
                  <div className="flex items-center gap-4">
                    <span className="flex items-center gap-2">

@@ -51,7 +51,7 @@
         const { useState, useEffect, useMemo } = React;
 
         // --- VERZIA APLIKÁCIE ---
-        const APP_VERSION = "Verzia: 15.03.2026, 16:45 (Návrat k natívnemu PDF Printu)";
+        const APP_VERSION = "Verzia: 15.03.2026, 17:00 (Oprava exportu a posúvania úloh)";
 
         // ==========================================
         // VÁŠ FIREBASE KĽÚČ
@@ -249,6 +249,7 @@
                     <div className="flex border-b-2 border-gray-400 pb-2 mb-4 relative z-20 bg-white/80">
                         <div className="w-1/4 font-bold text-gray-800 text-sm">Názov úlohy</div>
                         <div className="w-3/4 relative h-6 border-l-2 border-gray-400">
+                            {/* Týždňové štítky v hlavičke */}
                             {weeks.map(w => {
                                 const lp = ((w.getTime() - ganttData.minDate.getTime()) / ganttData.totalTime) * 100;
                                 return (
@@ -327,8 +328,6 @@
           const [dashboardTab, setDashboardTab] = useState('projects');
 
           const [draggedTaskIndex, setDraggedTaskIndex] = useState(null);
-          const [draggedAssetIndex, setDraggedAssetIndex] = useState(null);
-          const [draggedContactIndex, setDraggedContactIndex] = useState(null);
 
           const [showNewProjectModal, setShowNewProjectModal] = useState(false);
           const [newProjectName, setNewProjectName] = useState('');
@@ -394,17 +393,23 @@
             catch (e) { console.error("Error saving to cloud:", e); }
           };
 
-          // --- NATÍVNA TLAČ (VYSOKÁ KVALITA) ---
+          // --- NATÍVNA TLAČ S BEZPEČNOSTNÝM ONESKORENÍM PRE SAFARI ---
           const handlePrintReport = () => {
             document.body.classList.remove('printing-gantt');
-            window.print();
+            // Mierne oneskorenie, aby Safari stihlo aplikovať štýly
+            setTimeout(() => {
+                window.print();
+            }, 150);
           };
 
           const handlePrintGantt = () => {
             document.body.classList.add('printing-gantt');
-            window.print();
-            // Fallback poistka pre prehliadače, ktoré nepodporujú afterprint ideálne
-            setTimeout(() => { document.body.classList.remove('printing-gantt'); }, 1000);
+            // Pre iPad Safari - musíme počkať pred zablokovaním vlákna cez print()
+            setTimeout(() => {
+                window.print();
+                // Fallback poistka pre prehliadače, ktoré nepodporujú afterprint ideálne
+                setTimeout(() => { document.body.classList.remove('printing-gantt'); }, 1000);
+            }, 150);
           };
 
           if (authLoading) {
@@ -564,6 +569,18 @@
           const saveAccessChanges = (projectId, newAllowedList) => {
              updateCloudState({ projects: projects.map(p => p.id === projectId ? { ...p, allowedUsers: newAllowedList } : p) });
              setShowAccessModal(null);
+          };
+
+          // FUNKCIA PRE MANUÁLNE POSUNUTIE ÚLOHY NAHRÁDZAJÚCA CHYBOVÝ DRAG/DROP
+          const moveTask = (index, direction) => {
+             if (index + direction < 0 || index + direction >= (currentProject.tasks||[]).length) return;
+             updateCurrentProject(p => {
+                 const newTasks = [...(p.tasks||[])];
+                 const temp = newTasks[index];
+                 newTasks[index] = newTasks[index + direction];
+                 newTasks[index + direction] = temp;
+                 return { ...p, tasks: newTasks };
+             });
           };
 
           // ======================================================================
@@ -945,13 +962,11 @@
             );
           }
 
-          // BEZPEČNOSTNÁ POISTKA PROTI BIELEJ OBRAZOVKE 
           if (activeProjectId && !currentProject) {
             return (
               <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6 text-center">
                 <Icon name="triangle-exclamation" size={48} className="text-yellow-500 mb-4" />
                 <h2 className="text-xl font-bold text-gray-800 mb-2">Projekt sa nenašiel</h2>
-                <p className="text-gray-600 mb-6">Tento projekt bol pravdepodobne vymazaný iným administrátorom.</p>
                 <button onClick={() => setActiveProjectId(null)} className="px-6 py-2 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700">Späť na prehľad</button>
               </div>
             );
@@ -964,7 +979,6 @@
           const assets = currentProject.assets || [];
           const contacts = currentProject.contacts || [];
 
-          // Bezpečná kalkulácia Ganttovho diagramu
           let ganttData = null;
           const validTasks = tasks.filter(t => {
             if (!t.startDate || !t.deadline) return false;
@@ -997,7 +1011,7 @@
                       <div className="mb-6 bg-blue-50/50 border border-blue-100 p-4 rounded-lg inline-block min-w-[300px]">
                           <span className="text-xs text-blue-800 uppercase tracking-wider font-bold mb-2 block">Zodpovedná osoba za projekt</span>
                           
-                          {/* Pre PDF Export zobrazíme len text. Pre web zobrazíme roletku. */}
+                          {/* Pre PDF Export zobrazíme len text. Pre web zobrazíme roletku s výberom. */}
                           {isExport ? (
                               <div className="text-lg font-bold text-blue-900 flex items-center gap-2 mt-1">
                                   <Icon name="user-tie" />
@@ -1127,7 +1141,7 @@
                         <table className="w-full text-left border-collapse min-w-max">
                           <thead className="sticky top-0 bg-gray-100 border-b border-gray-300 z-10 shadow-sm">
                             <tr>
-                              <th className="p-3 w-8"></th>
+                              <th className="p-3 w-10"></th>
                               <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-16">Sekcia</th>
                               <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-64">Názov úlohy</th>
                               <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-32">Začiatok</th>
@@ -1149,24 +1163,50 @@
                               const tdBorder = isNewSection ? 'border-t-[3px] border-t-gray-600' : 'border-t border-t-gray-200';
                               const depth = task.wbs ? String(task.wbs).split('.').filter(Boolean).length : 0;
                               return (
-                              <tr key={task.id} className={`hover:bg-blue-50/30 transition-colors group ${draggedTaskIndex === index ? 'opacity-50 bg-blue-100' : ''}`} draggable onDragStart={() => setDraggedTaskIndex(index)} onDragOver={(e) => e.preventDefault()} onDrop={() => {
-                                if (draggedTaskIndex === null || draggedTaskIndex === index) return;
-                                updateCurrentProject(p => {
-                                  const newTasks = [...(p.tasks||[])];
-                                  const [draggedItem] = newTasks.splice(draggedTaskIndex, 1);
-                                  newTasks.splice(index, 0, draggedItem);
-                                  return { ...p, tasks: newTasks };
-                                });
-                                setDraggedTaskIndex(null);
+                              <tr key={task.id} className={`hover:bg-blue-50/30 transition-colors group ${draggedTaskIndex === index ? 'opacity-50 bg-blue-100' : ''}`} 
+                                draggable 
+                                onDragStart={(e) => {
+                                  // Tento malý riadok je potrebný, aby Drag and Drop fungoval aj vo Firefoxe a na iPadoch
+                                  if(e.dataTransfer) { e.dataTransfer.setData('text/plain', index.toString()); e.dataTransfer.effectAllowed = 'move'; }
+                                  setDraggedTaskIndex(index);
+                                }} 
+                                onDragOver={(e) => e.preventDefault()} 
+                                onDrop={(e) => {
+                                  e.preventDefault();
+                                  if (draggedTaskIndex === null || draggedTaskIndex === index) return;
+                                  updateCurrentProject(p => {
+                                    const newTasks = [...(p.tasks||[])];
+                                    const [draggedItem] = newTasks.splice(draggedTaskIndex, 1);
+                                    newTasks.splice(index, 0, draggedItem);
+                                    return { ...p, tasks: newTasks };
+                                  });
+                                  setDraggedTaskIndex(null);
                               }}>
-                                <td className={`p-2 border-r border-r-gray-100 text-center cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 ${tdBorder}`}><Icon name="grip-vertical" size={16} /></td>
+                                {/* PRIDANÉ ŠÍPKY PRE POSUN HORE DOLE (Oveľa lepšie pre tablety!) */}
+                                <td className={`p-1 border-r border-r-gray-100 text-center align-middle ${tdBorder}`}>
+                                  <div className="flex flex-col items-center justify-center">
+                                    <button onClick={(e) => { 
+                                        e.stopPropagation();
+                                        if (index === 0) return;
+                                        updateCurrentProject(p => { const newTasks = [...p.tasks]; const t = newTasks[index]; newTasks[index] = newTasks[index-1]; newTasks[index-1] = t; return {...p, tasks: newTasks}; });
+                                    }} disabled={index === 0} className="text-gray-400 hover:text-blue-600 disabled:opacity-20 p-0.5"><Icon name="chevron-up" size={10} /></button>
+                                    
+                                    <Icon name="grip-vertical" size={14} className="text-gray-300 my-0.5 cursor-grab" />
+                                    
+                                    <button onClick={(e) => { 
+                                        e.stopPropagation();
+                                        if (index === tasks.length - 1) return;
+                                        updateCurrentProject(p => { const newTasks = [...p.tasks]; const t = newTasks[index]; newTasks[index] = newTasks[index+1]; newTasks[index+1] = t; return {...p, tasks: newTasks}; });
+                                    }} disabled={index === tasks.length - 1} className="text-gray-400 hover:text-blue-600 disabled:opacity-20 p-0.5"><Icon name="chevron-down" size={10} /></button>
+                                  </div>
+                                </td>
                                 <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}><InputCell value={task.wbs} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, wbs: v} : t)}))} placeholder="1.1" /></td>
                                 <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}><div style={{ paddingLeft: depth > 1 ? `${(depth - 1) * 1.5}rem` : '0' }}><InputCell value={task.name} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, name: v} : t)}))} placeholder="Názov..." /></div></td>
                                 
                                 <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}><InputCell value={task.startDate} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, startDate: v} : t)}))} type="date" /></td>
                                 <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}><InputCell value={task.deadline} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, deadline: v} : t)}))} type="date" /></td>
                                 
-                                {/* Výber viacerých osôb v tabuľke */}
+                                {/* Výber viacerých osôb v tabuľke (S VYHĽADÁVANÍM) */}
                                 <td className={`p-2 border-r border-r-gray-100 ${tdBorder} align-top`}>
                                   <MultiUserSelect value={task.assignedTo} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, assignedTo: v} : t)}))} users={globalUsers} departments={departments} />
                                 </td>
@@ -1291,56 +1331,55 @@
                     </div>
                   </div>
                 )}
-
-                {/* ========================================================================= */}
-                {/* --- SKRYTÉ EXPORT KONTAJNERY PRE NATÍVNU TLAČ (PDF) --- */}
-                {/* ========================================================================= */}
-                
-                {/* EXPORT: HARMONOGRAM */}
-                <div className="hidden print:block w-full print-report-only page-break-after-always">
-                  <div className="flex justify-between items-end border-b-2 border-gray-800 pb-4 mb-6">
-                    <img src={LOGO_URL} alt="Logo" className="h-14 object-contain" />
-                    <div className="text-right">
-                      <h1 className="text-2xl font-bold text-gray-900 leading-tight">{currentProject.name}</h1>
-                      <p className="text-sm text-gray-700 font-semibold mt-1">
-                        {currentProject.startDate && currentProject.endDate ? 
-                          `Obdobie: ${new Date(currentProject.startDate).toLocaleDateString('sk-SK')} - ${new Date(currentProject.endDate).toLocaleDateString('sk-SK')}` 
-                          : 'Obdobie neurčené'
-                        }
-                      </p>
-                      <p className="text-xs text-gray-500 mt-1">Stav k dátumu: {new Date().toLocaleDateString('sk-SK')}</p>
-                    </div>
-                  </div>
-                  
-                  {/* Tím projektu sa tiež tlačí do PDF */}
-                  <div className="mb-6 page-break-inside-avoid">
-                      <ProjectTeamSection isExport={true} />
-                  </div>
-                  
-                  <div className="mb-10">
-                    <ExportTasks tasks={tasks} globalUsers={globalUsers} />
-                  </div>
-                </div>
-
-                {/* EXPORT: GANTT */}
-                <div className="hidden print:block w-full print-gantt-only">
-                  <div className="flex justify-between items-end border-b-2 border-gray-800 pb-4 mb-6">
-                    <img src={LOGO_URL} alt="Logo" className="h-10 object-contain" />
-                    <div className="text-right">
-                      <h1 className="text-xl font-bold text-gray-900 leading-tight">{currentProject.name} (Ganttov diagram)</h1>
-                      <p className="text-sm text-gray-700 font-semibold mt-1">
-                        {currentProject.startDate && currentProject.endDate ? 
-                          `Obdobie: ${new Date(currentProject.startDate).toLocaleDateString('sk-SK')} - ${new Date(currentProject.endDate).toLocaleDateString('sk-SK')}` 
-                          : 'Obdobie neurčené'
-                        }
-                      </p>
-                      <p className="text-xs text-gray-500 mt-1">Stav k dátumu: {new Date().toLocaleDateString('sk-SK')}</p>
-                    </div>
-                  </div>
-                  <ExportGantt ganttData={ganttData} />
-                </div>
-
               </main>
+
+              {/* ========================================================================= */}
+              {/* --- SKRYTÉ EXPORT KONTAJNERY PRE NATÍVNU TLAČ (PDF) --- */}
+              {/* ========================================================================= */}
+              
+              {/* EXPORT: HARMONOGRAM */}
+              <div className="hidden print:block w-full print-report-only page-break-after-always">
+                <div className="flex justify-between items-end border-b-2 border-gray-800 pb-4 mb-6">
+                  <img src={LOGO_URL} alt="Logo" className="h-14 object-contain" />
+                  <div className="text-right">
+                    <h1 className="text-2xl font-bold text-gray-900 leading-tight">{currentProject.name}</h1>
+                    <p className="text-sm text-gray-700 font-semibold mt-1">
+                      {currentProject.startDate && currentProject.endDate ? 
+                        `Obdobie: ${new Date(currentProject.startDate).toLocaleDateString('sk-SK')} - ${new Date(currentProject.endDate).toLocaleDateString('sk-SK')}` 
+                        : 'Obdobie neurčené'
+                      }
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">Stav k dátumu: {new Date().toLocaleDateString('sk-SK')}</p>
+                  </div>
+                </div>
+                
+                {/* Tím projektu sa tiež tlačí do PDF */}
+                <div className="mb-6 page-break-inside-avoid">
+                    <ProjectTeamSection isExport={true} />
+                </div>
+                
+                <div className="mb-10">
+                  <ExportTasks tasks={tasks} globalUsers={globalUsers} />
+                </div>
+              </div>
+
+              {/* EXPORT: GANTT */}
+              <div className="hidden print:block w-full print-gantt-only">
+                <div className="flex justify-between items-end border-b-2 border-gray-800 pb-4 mb-6">
+                  <img src={LOGO_URL} alt="Logo" className="h-10 object-contain" />
+                  <div className="text-right">
+                    <h1 className="text-xl font-bold text-gray-900 leading-tight">{currentProject.name} (Ganttov diagram)</h1>
+                    <p className="text-sm text-gray-700 font-semibold mt-1">
+                      {currentProject.startDate && currentProject.endDate ? 
+                        `Obdobie: ${new Date(currentProject.startDate).toLocaleDateString('sk-SK')} - ${new Date(currentProject.endDate).toLocaleDateString('sk-SK')}` 
+                        : 'Obdobie neurčené'
+                      }
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">Stav k dátumu: {new Date().toLocaleDateString('sk-SK')}</p>
+                  </div>
+                </div>
+                <ExportGantt ganttData={ganttData} />
+              </div>
 
               {/* SPODNÁ LIŠTA EDITOR - IDENTIFIKÁTOR A ODHLÁSENIE */}
               <div className="fixed bottom-0 left-0 w-full bg-gray-900 text-white p-2 px-6 text-xs flex justify-between items-center z-40 print:hidden shadow-lg">

@@ -16,24 +16,30 @@
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
+    <!-- PDF Knižnice pre priame stiahnutie -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
     <style>
-        /* Rozdelenie štýlov pre tlač bežného reportu a Ganttovho diagramu */
+        /* Skrytý kontajner pre generovanie PDF - nie je ho vidieť, ale knižnica ho dokáže odfotiť */
+        .pdf-export-hidden {
+            position: absolute;
+            top: -9999px;
+            left: -9999px;
+            background-color: white;
+            z-index: -10;
+        }
+        .pdf-export-hidden.gantt-mode {
+            width: 297mm;
+        }
+        .pdf-export-hidden.report-mode {
+            width: 210mm;
+        }
+        
         @media print {
             body { -webkit-print-color-adjust: exact; print-color-adjust: exact; background-color: white !important; }
             .print\:hidden { display: none !important; }
-            .print\:shadow-none { box-shadow: none !important; }
-            .print\:border-none { border: none !important; }
-            .print\:static { position: static !important; }
-            @page { margin: 0; size: A4 portrait; }
-            
-            /* Ak tlačíme bežný report (Harmonogram), skryjeme sekciu Gantt */
-            body:not(.printing-gantt) .print-gantt-only { display: none !important; }
-            body:not(.printing-gantt) .print-report-only { display: block !important; }
-            
-            /* Ak tlačíme Gantt, skryjeme bežný report a naopak ho zobrazíme na šírku (landscape) */
-            body.printing-gantt .print-report-only { display: none !important; }
-            body.printing-gantt .print-gantt-only { display: block !important; }
-            body.printing-gantt @page { size: A4 landscape; }
+            @page { margin: 0; size: auto; }
         }
     </style>
 </head>
@@ -42,13 +48,13 @@
 
     <script type="text/babel" data-type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const { useState, useEffect, useMemo } = React;
 
         // --- VERZIA APLIKÁCIE ---
-        const APP_VERSION = "Verzia: 12.03.2026, 21:32 (Návrat na plnú funkčnú verziu)";
+        const APP_VERSION = "Verzia: 14.03.2026, 15:05 (Plný kód + Odkazy + Priamy Export)";
 
         // ==========================================
         // VÁŠ FIREBASE KĽÚČ
@@ -102,7 +108,7 @@
         );
 
         const InputCell = ({ value, onChange, type = "text", placeholder = "" }) => (
-          <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} className="w-full p-1 bg-transparent rounded outline-none hover:bg-gray-50 focus:bg-white focus:ring-1 focus:ring-blue-500" />
+          <input type={type} value={value || ''} onChange={e => onChange(e.target.value)} placeholder={placeholder} className="w-full p-1 bg-transparent rounded outline-none hover:bg-gray-50 focus:bg-white focus:ring-1 focus:ring-blue-500" />
         );
 
         const INITIAL_DB_STATE = {
@@ -122,7 +128,7 @@
               allowedUsers: ['u3', 'u1'],
               contacts: [{ id: 'c1', name: 'Karol Zima', position: 'Manažér pobočky', email: 'karol.zima@firma.sk', phone: '+421 900 123 456' }],
               tasks: [
-                { id: 't1', wbs: '1.', name: 'BOZP', startDate: '', deadline: '', assignedTo: 'u3', status: '1', notes: 'Zabezpečiť úvodné školenie', link: '' }
+                { id: 't1', wbs: '1.', name: 'BOZP', link: '', startDate: '', deadline: '', assignedTo: 'u3', status: '1', notes: 'Zabezpečiť úvodné školenie' }
               ],
               assets: [{ id: 'a1', name: 'Ochranné prilby', quantity: 15, unitPrice: 450, assignedTo: 'u3', status: '3' }]
             }
@@ -135,6 +141,9 @@
           const [appState, setAppState] = useState(null);
           const [loading, setLoading] = useState(true);
           const [dbError, setDbError] = useState(false);
+
+          // Stav pre indikátor sťahovania PDF
+          const [isExporting, setIsExporting] = useState(null);
 
           const [activeTab, setActiveTab] = useState('harmonogram');
           const [dashboardTab, setDashboardTab] = useState('projects');
@@ -179,15 +188,7 @@
             return () => unsubscribe();
           }, [user]);
 
-          // Event listener pre vyčistenie tried po tlači (čisté riešenie pre Safari)
-          useEffect(() => {
-            const handleAfterPrint = () => {
-              document.body.classList.remove('printing-gantt');
-            };
-            window.addEventListener('afterprint', handleAfterPrint);
-            return () => window.removeEventListener('afterprint', handleAfterPrint);
-          }, []);
-
+          // Prihlasovanie cez Popup
           const handleLogin = async () => {
             try {
               await signInWithPopup(auth, googleProvider);
@@ -207,15 +208,53 @@
             catch (e) { console.error("Error saving to cloud:", e); }
           };
 
-          // --- PRIAME VOLANIA TLAČE BEZ ČASOVAČA (FIX PRE SAFARI) ---
-          const handlePrintReport = () => {
-            document.body.classList.remove('printing-gantt');
-            window.print();
-          };
+          // --- PRIAMY EXPORT DO PDF CEZ JSPDF ---
+          const exportToPDF = (type) => {
+            setIsExporting(type);
+            
+            // Timeout pre zobrazenie indikátora načítavania
+            setTimeout(async () => {
+              try {
+                const { jsPDF } = window.jspdf;
+                const elementId = type === 'gantt' ? 'gantt-export-container' : 'report-export-container';
+                const element = document.getElementById(elementId);
+                
+                if (!element) throw new Error("Element nenájdený");
 
-          const handlePrintGantt = () => {
-            document.body.classList.add('printing-gantt');
-            window.print();
+                // Vyfotenie skrytého divu
+                const canvas = await window.html2canvas(element, { 
+                    scale: 2, // 2x rozlíšenie pre lepšiu kvalitu
+                    useCORS: true,
+                    logging: false,
+                    backgroundColor: '#ffffff',
+                    windowWidth: type === 'gantt' ? 1122 : 794
+                });
+                
+                const imgData = canvas.toDataURL('image/jpeg', 1.0);
+                const isGantt = type === 'gantt';
+                
+                const pdf = new jsPDF({
+                    orientation: isGantt ? 'landscape' : 'portrait',
+                    unit: 'mm',
+                    format: 'a4'
+                });
+                
+                const pdfWidth = pdf.internal.pageSize.getWidth();
+                const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+                
+                pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+                
+                // Názov súboru z názvu projektu
+                const projectNameClean = currentProject?.name?.replace(/[^a-z0-9]/gi, '_') || 'Projekt';
+                pdf.save(`G4S_${projectNameClean}_${isGantt ? 'Gantt' : 'Harmonogram'}.pdf`);
+                
+              } catch (err) {
+                console.error('Chyba pri exporte:', err);
+                alert('Nepodarilo sa vygenerovať PDF. Skúste to prosím znova.');
+              } finally {
+                setIsExporting(null);
+              }
+            }, 300);
           };
 
           if (authLoading) {
@@ -441,7 +480,7 @@
                   </div>
                 )}
 
-                {/* MODAL - Úprava práv pre existujúci projekt (Iba pre Admina) */}
+                {/* MODAL - Úprava práv pre existujúci projekt */}
                 {showAccessModal && (
                   <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
                     <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden flex flex-col">
@@ -492,7 +531,7 @@
                 )}
 
                 <div className="max-w-6xl mx-auto flex-1 w-full pb-20">
-                  <header className="mb-6 flex justify-between items-end pb-4 border-b">
+                  <header className="mb-6 flex justify-between items-end pb-4 border-b border-gray-200">
                     <div className="flex flex-col gap-4">
                       <img src={LOGO_URL} alt="Logo spoločnosti" className="h-10 object-contain self-start rounded" />
                       <div>
@@ -543,7 +582,6 @@
                                 <p>Naposledy upravené: {proj.lastModified}</p>
                               </div>
                               
-                              {/* Riadok s ikonkami ľudí pre lepšiu orientáciu (Len orientačne) */}
                               <div className="flex -space-x-2 overflow-hidden mt-2">
                                 {(proj.allowedUsers||[]).slice(0,3).map((uid, i) => (
                                   <div key={i} className="inline-block h-6 w-6 rounded-full ring-2 ring-white bg-gray-200 flex items-center justify-center text-[10px] text-gray-600 font-bold" title="Osoba s prístupom">
@@ -569,7 +607,6 @@
                         </div>
                       </section>
 
-                      {/* Šablóny vidí IBA ADMINISTRÁTOR */}
                       {isAdmin && myTemplates.length > 0 && (
                         <section>
                           <h2 className="text-xl font-semibold text-gray-700 mb-4 flex items-center gap-2"><Icon name="file-lines" size={20}/> Šablóny na použitie</h2>
@@ -652,10 +689,7 @@
                                         <td className="p-2 w-24 pl-4 border-r border-gray-50"><input value={u.prefix} onChange={e => updateCloudState({ globalUsers: globalUsers.map(usr => usr.id === u.id ? { ...usr, prefix: e.target.value } : usr) })} className="w-full p-1.5 border border-transparent hover:border-gray-300 focus:bg-white focus:border-blue-500 outline-none rounded" placeholder="1.1." /></td>
                                         <td className="p-2 w-1/3 border-r border-gray-50"><input value={u.name} onChange={e => updateCloudState({ globalUsers: globalUsers.map(usr => usr.id === u.id ? { ...usr, name: e.target.value } : usr) })} className="w-full p-1.5 border border-transparent hover:border-gray-300 focus:bg-white focus:border-blue-500 outline-none rounded" placeholder="Meno a priezvisko" /></td>
                                         <td className="p-2 w-1/3 border-r border-gray-50"><input value={u.email} onChange={e => updateCloudState({ globalUsers: globalUsers.map(usr => usr.id === u.id ? { ...usr, email: e.target.value } : usr) })} type="email" className="w-full p-1.5 border border-transparent hover:border-gray-300 focus:bg-white focus:border-blue-500 outline-none rounded" placeholder="Prístupový Google E-mail" /></td>
-                                        <td className="p-2 w-44 flex items-center gap-2 text-sm text-gray-600">
-                                          <Icon name="bell" size={14} className="text-gray-400"/>
-                                          <input type="number" value={u.notifyDays} onChange={e => updateCloudState({ globalUsers: globalUsers.map(usr => usr.id === u.id ? { ...usr, notifyDays: e.target.value } : usr) })} className="w-14 p-1.5 border border-transparent hover:border-gray-300 focus:bg-white focus:border-blue-500 outline-none rounded text-center" min="0" /> dní
-                                        </td>
+                                        <td className="p-2 w-44 flex items-center gap-2 text-sm text-gray-600"><Icon name="bell" size={14} className="text-gray-400"/><input type="number" value={u.notifyDays} onChange={e => updateCloudState({ globalUsers: globalUsers.map(usr => usr.id === u.id ? { ...usr, notifyDays: e.target.value } : usr) })} className="w-14 p-1.5 border border-transparent hover:border-gray-300 focus:bg-white focus:border-blue-500 outline-none rounded text-center" min="0" /> dní</td>
                                         <td className="p-2 text-center pr-4"><button onClick={() => { if(confirm('Odstrániť používateľa? Stratí tým prístup na stránku.')) updateCloudState({ globalUsers: globalUsers.filter(usr => usr.id !== u.id) })}} className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 p-1"><Icon name="trash-can" size={16}/></button></td>
                                       </tr>
                                     ))}
@@ -732,9 +766,9 @@
 
           return (
             <div className="min-h-screen bg-gray-100 flex flex-col font-sans pb-12">
-              <header className="bg-white shadow-sm border-b px-6 py-4 flex justify-between items-center print:shadow-none print:border-b-2 print:border-gray-800">
+              <header className="bg-white shadow-sm border-b px-6 py-4 flex justify-between items-center print:hidden">
                 <div className="flex items-center gap-4">
-                  <button onClick={() => setActiveProjectId(null)} className="p-2 hover:bg-gray-100 rounded-full text-gray-600 transition-colors print:hidden" title="Späť na prehľad"><Icon name="arrow-left" size={20} /></button>
+                  <button onClick={() => setActiveProjectId(null)} className="p-2 hover:bg-gray-100 rounded-full text-gray-600 transition-colors" title="Späť na prehľad"><Icon name="arrow-left" size={20} /></button>
                   <img src={LOGO_URL} alt="Logo" className="h-8 object-contain hidden print:block mr-4" />
                   <div>
                     <div className="flex items-center gap-2 group">
@@ -748,8 +782,14 @@
                   </div>
                 </div>
                 <div className="flex gap-3 print:hidden">
-                  <button onClick={handlePrintGantt} className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"><Icon name="chart-gantt" size={16} /> Export Gantt</button>
-                  <button onClick={handlePrintReport} className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"><Icon name="file-pdf" size={16} /> Export PDF</button>
+                  <button onClick={() => exportToPDF('gantt')} disabled={isExporting !== null} className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50">
+                    {isExporting === 'gantt' ? <Icon name="circle-notch" className="fa-spin" size={16}/> : <Icon name="chart-gantt" size={16} />} 
+                    {isExporting === 'gantt' ? 'Generujem...' : 'Export Gantt'}
+                  </button>
+                  <button onClick={() => exportToPDF('report')} disabled={isExporting !== null} className="flex items-center gap-2 px-4 py-2 bg-blue-600 rounded-md shadow-sm text-sm font-medium text-white hover:bg-blue-700 transition-colors disabled:opacity-50">
+                    {isExporting === 'report' ? <Icon name="circle-notch" className="fa-spin" size={16}/> : <Icon name="file-pdf" size={16} />} 
+                    {isExporting === 'report' ? 'Generujem...' : 'Export PDF'}
+                  </button>
                 </div>
               </header>
 
@@ -769,7 +809,7 @@
                   <div className="bg-white rounded-xl shadow border border-gray-200 flex-1 flex flex-col overflow-hidden print:hidden">
                     <div className="p-4 border-b flex justify-between items-center bg-gray-50/50">
                       <h2 className="text-lg font-semibold text-gray-800">Zošit: Harmonogram úloh</h2>
-                      <button onClick={() => updateCurrentProject(p => ({...p, tasks: [...(p.tasks||[]), { id: Date.now().toString(), wbs: '', name: '', startDate: '', deadline: '', assignedTo: '', status: '1', notes: '', link: '' }] }))} className="flex items-center gap-1 px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-md text-sm font-medium transition-colors"><Icon name="plus" size={16} /> Pridať riadok</button>
+                      <button onClick={() => updateCurrentProject(p => ({...p, tasks: [...(p.tasks||[]), { id: Date.now().toString(), wbs: '', name: '', link: '', startDate: '', deadline: '', assignedTo: '', status: '1', notes: '' }] }))} className="flex items-center gap-1 px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-md text-sm font-medium transition-colors"><Icon name="plus" size={16} /> Pridať riadok</button>
                     </div>
                     <div className="overflow-auto flex-1">
                       <table className="w-full text-left border-collapse min-w-max">
@@ -778,8 +818,9 @@
                             <th className="p-3 w-8"></th>
                             <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-16">Sekcia</th>
                             <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-64">Názov úlohy</th>
-                            <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-36">Začiatok</th>
-                            <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-36">Termín</th>
+                            <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-36">Odkaz / Link</th>
+                            <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-32">Začiatok</th>
+                            <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-32">Termín</th>
                             <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-40">Zodpovedný</th>
                             <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-36">Stav</th>
                             <th className="p-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">Poznámka</th>
@@ -807,6 +848,18 @@
                               <td className={`p-2 border-r border-r-gray-100 text-center cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 ${tdBorder}`}><Icon name="grip-vertical" size={16} /></td>
                               <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}><InputCell value={task.wbs} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, wbs: v} : t)}))} placeholder="1.1" /></td>
                               <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}><div style={{ paddingLeft: depth > 1 ? `${(depth - 1) * 1.5}rem` : '0' }}><InputCell value={task.name} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, name: v} : t)}))} placeholder="Názov..." /></div></td>
+                              
+                              <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}>
+                                <div className="flex items-center gap-1">
+                                  <InputCell value={task.link} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, link: v} : t)}))} placeholder="https://..." />
+                                  {task.link && (
+                                    <a href={task.link.startsWith('http') ? task.link : `https://${task.link}`} target="_blank" className="p-1 text-blue-500 hover:text-blue-700 transition-colors rounded hover:bg-blue-100" title="Otvoriť odkaz">
+                                      <Icon name="arrow-up-right-from-square" />
+                                    </a>
+                                  )}
+                                </div>
+                              </td>
+
                               <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}><InputCell value={task.startDate} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, startDate: v} : t)}))} type="date" /></td>
                               <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}><InputCell value={task.deadline} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, deadline: v} : t)}))} type="date" /></td>
                               <td className={`p-2 border-r border-r-gray-100 ${tdBorder}`}><UserSelect value={task.assignedTo} onChange={(v) => updateCurrentProject(p => ({...p, tasks: (p.tasks||[]).map(t => t.id === task.id ? {...t, assignedTo: v} : t)}))} users={globalUsers} departments={departments} /></td>
@@ -949,104 +1002,33 @@
                     </div>
                   </div>
                 )}
-
-                {/* ========================================================= */}
-                {/* --- BEŽNÝ PDF NÁHĽAD (TLAČÍ SA IBA CEZ "Export PDF") --- */}
-                {/* ========================================================= */}
-                <div className="hidden print:block flex-1 overflow-visible print-report-only">
-                  <div className="max-w-[210mm] mx-auto bg-white min-h-[297mm] p-0 w-full">
-                    <div className="flex justify-between items-end border-b-2 border-gray-800 pb-4 mb-8">
-                      <img src={LOGO_URL} alt="Logo" className="h-14 object-contain" />
-                      <div className="text-right">
-                        <h1 className="text-2xl font-bold text-gray-900 leading-tight">{currentProject.name}</h1>
-                        <p className="text-sm text-gray-500 mt-1">Stav k dátumu: {new Date().toLocaleDateString('sk-SK')}</p>
-                      </div>
-                    </div>
-                    
-                    {/* Iba Harmonogram */}
-                    <div className="mb-10">
-                      <h2 className="text-lg font-bold text-gray-800 mb-4 uppercase tracking-wide">Harmonogram úloh</h2>
-                      <table className="w-full text-left border-collapse text-sm">
-                        <thead>
-                          <tr className="border-b-2 border-gray-800">
-                            <th className="py-2 pr-2 font-bold text-gray-800 w-12">WBS</th>
-                            <th className="py-2 pr-2 font-bold text-gray-800">Názov úlohy</th>
-                            <th className="py-2 pr-2 font-bold text-gray-800 w-24">Začiatok</th>
-                            <th className="py-2 pr-2 font-bold text-gray-800 w-24">Termín</th>
-                            <th className="py-2 pr-2 font-bold text-gray-800 w-32">Zodpovednosť</th>
-                            <th className="py-2 font-bold text-gray-800 w-32">Stav</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-200">
-                          {tasks.map((task) => {
-                            const statusLabel = STATUS_OPTIONS.find(o => o.value === task.status)?.label || '-';
-                            const userName = globalUsers.find(u => u.id === task.assignedTo)?.name || '-';
-                            const depth = task.wbs ? String(task.wbs).split('.').filter(Boolean).length : 0;
-                            return (
-                              <tr key={task.id} className="break-inside-avoid">
-                                <td className="py-2 pr-2 text-gray-600 align-top">{task.wbs}</td>
-                                <td className="py-2 pr-2 text-gray-900 font-medium align-top"><div style={{ paddingLeft: depth > 1 ? `${(depth - 1) * 1.5}rem` : '0' }}>{task.name}{task.notes && <div className="text-xs text-gray-500 font-normal mt-0.5">{task.notes}</div>}</div></td>
-                                <td className="py-2 pr-2 text-gray-700 align-top">{task.startDate ? new Date(task.startDate).toLocaleDateString('sk-SK') : '-'}</td>
-                                <td className="py-2 pr-2 text-gray-700 align-top">{task.deadline ? new Date(task.deadline).toLocaleDateString('sk-SK') : '-'}</td>
-                                <td className="py-2 pr-2 text-gray-700 align-top">{userName}</td>
-                                <td className="py-2 text-gray-700 align-top">{statusLabel}</td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </div>
-
-                {/* ========================================================= */}
-                {/* --- GANTT PDF NÁHĽAD (TLAČÍ SA IBA CEZ "Export Gantt") --- */}
-                {/* ========================================================= */}
-                <div className="hidden print:block flex-1 overflow-visible print-gantt-only w-[297mm]">
-                  <div className="flex justify-between items-end border-b-2 border-gray-800 pb-4 mb-6">
-                    <img src={LOGO_URL} alt="Logo" className="h-10 object-contain" />
-                    <div className="text-right">
-                      <h1 className="text-xl font-bold text-gray-900 leading-tight">{currentProject.name} (Ganttov diagram)</h1>
-                      <p className="text-xs text-gray-500 mt-1">Stav k dátumu: {new Date().toLocaleDateString('sk-SK')}</p>
-                    </div>
-                  </div>
-
-                  {!ganttData ? (
-                    <div className="text-center text-gray-500 py-10 italic">Pre zobrazenie diagramu musia mať úlohy vyplnený Začiatok aj Termín.</div>
-                  ) : (
-                    <div>
-                      <div className="flex border-b border-gray-300 pb-2 mb-4 relative">
-                        <div className="w-1/3 font-bold text-gray-800 text-sm">Názov úlohy</div>
-                        <div className="w-2/3 relative h-4 border-l border-gray-300">
-                          <span className="absolute left-0 -translate-x-1/2 text-[10px] text-gray-600 bg-white px-1 font-bold">{ganttData.minDate.toLocaleDateString('sk-SK')}</span>
-                          <span className="absolute right-0 translate-x-1/2 text-[10px] text-gray-600 bg-white px-1 font-bold">{ganttData.maxDate.toLocaleDateString('sk-SK')}</span>
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        {ganttData.validTasks.map(task => {
-                          const tStart = new Date(task.startDate).getTime();
-                          const tEnd = new Date(task.deadline).getTime();
-                          let leftPercent = ((tStart - ganttData.minDate.getTime()) / ganttData.totalTime) * 100;
-                          let widthPercent = ((tEnd - tStart) / ganttData.totalTime) * 100;
-                          if (widthPercent <= 0) widthPercent = 1;
-                          const statusColor = STATUS_OPTIONS.find(o => o.value === task.status)?.color.split(' ')[0] || 'bg-gray-400';
-                          return (
-                            <div key={task.id} className="flex items-center group page-break-inside-avoid">
-                              <div className="w-1/3 pr-4 truncate text-xs font-medium text-gray-800 border-r border-gray-200">{task.wbs} {task.name}</div>
-                              <div className="w-2/3 relative h-6">
-                                <div className={`absolute h-4 top-1 rounded flex items-center px-1 text-[9px] font-medium text-gray-900 ${statusColor} print:!bg-opacity-100`} style={{ left: `${leftPercent}%`, width: `${widthPercent}%`, minWidth: '16px', WebkitPrintColorAdjust: 'exact' }}>
-                                  {widthPercent > 8 && <span className="truncate opacity-80">{new Date(task.startDate).toLocaleDateString('sk-SK').slice(0, -5)} - {new Date(task.deadline).toLocaleDateString('sk-SK').slice(0, -5)}</span>}
-                                </div>
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
               </main>
+
+              {/* ========================================================================= */}
+              {/* --- SKRYTÉ EXPORT KONTAJNERY PRE PDF SŤAHOVANIE --- */}
+              {/* ========================================================================= */}
+              
+              <div className="pdf-export-hidden report-mode" id="report-export-container" style={{ padding: '15mm' }}>
+                <div className="flex justify-between items-end border-b-2 border-gray-800 pb-4 mb-8">
+                  <img src={LOGO_URL} alt="Logo" className="h-14 object-contain" />
+                  <div className="text-right">
+                    <h1 className="text-2xl font-bold text-gray-900 leading-tight">{currentProject.name}</h1>
+                    <p className="text-sm text-gray-500 mt-1">Stav k dátumu: {new Date().toLocaleDateString('sk-SK')}</p>
+                  </div>
+                </div>
+                <ExportTasks tasks={tasks} globalUsers={globalUsers} />
+              </div>
+
+              <div className="pdf-export-hidden gantt-mode" id="gantt-export-container" style={{ padding: '15mm' }}>
+                <div className="flex justify-between items-end border-b-2 border-gray-800 pb-4 mb-6">
+                  <img src={LOGO_URL} alt="Logo" className="h-10 object-contain" />
+                  <div className="text-right">
+                    <h1 className="text-xl font-bold text-gray-900 leading-tight">{currentProject.name} (Ganttov diagram)</h1>
+                    <p className="text-xs text-gray-500 mt-1">Stav k dátumu: {new Date().toLocaleDateString('sk-SK')}</p>
+                  </div>
+                </div>
+                <ExportGantt ganttData={ganttData} />
+              </div>
 
               {/* SPODNÁ LIŠTA EDITOR - IDENTIFIKÁTOR A ODHLÁSENIE */}
               <div className="fixed bottom-0 left-0 w-full bg-gray-900 text-white p-2 px-6 text-xs flex justify-between items-center z-40 print:hidden shadow-lg">
@@ -1059,6 +1041,7 @@
                  </div>
                  <div className="flex items-center gap-4">
                    {isAdmin && <div className="text-gray-400 border-r border-gray-700 pr-4 mr-1">{APP_VERSION}</div>}
+                   <div><span className="text-gray-400">UID:</span> <code className="bg-gray-800 px-2 py-1 rounded select-all font-mono tracking-wider ml-1">{user?.uid}</code></div>
                    <button onClick={handleLogout} className="bg-gray-800 hover:bg-red-600 px-3 py-1 rounded transition-colors text-white border border-gray-700 hover:border-red-500">Odhlásiť sa</button>
                  </div>
               </div>
